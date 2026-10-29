@@ -1,0 +1,151 @@
+# Запити для VS Code REST Client або JetBrains HTTP Client. Спочатку register, потім підставте token.
+@base = http://localhost:3002
+@token = PASTE_TOKEN_HERE
+@webhookSecret = whsec-dev
+
+### Реєстрація (новий tenant: перший користувач admin)
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{ "tenantSlug": "acme", "email": "admin@acme.test", "password": "password123" }
+
+### Логін (після npm run seed)
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "tenantSlug": "acme", "email": "admin@acme.test", "password": "password123" }
+
+### Хто я
+GET {{base}}/auth/me
+Authorization: Bearer {{token}}
+
+### Товари v1 / v2 / за прапорцем
+GET {{base}}/v1/products
+Authorization: Bearer {{token}}
+
+###
+GET {{base}}/v2/products
+Authorization: Bearer {{token}}
+
+###
+GET {{base}}/products
+Authorization: Bearer {{token}}
+
+### Створити товар (admin)
+POST {{base}}/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "sku": "KB-100", "name": "Клавіатура", "priceCents": 1999, "stock": 10 }
+
+### Оптимістичне блокування: version обов'язкова
+PATCH {{base}}/products/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "version": 1, "name": "Клавіатура Pro" }
+
+### Soft delete і restore
+DELETE {{base}}/products/{{productId}}
+Authorization: Bearer {{token}}
+
+###
+POST {{base}}/products/{{productId}}/restore
+Authorization: Bearer {{token}}
+
+### Audit
+GET {{base}}/audit?entity=product&entityId={{productId}}
+Authorization: Bearer {{token}}
+
+### Замовлення з Idempotency-Key (повторіть запит: Idempotent-Replayed: true)
+POST {{base}}/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+Idempotency-Key: order-demo-1
+
+{ "items": [{ "productId": "{{productId}}", "qty": 2 }] }
+
+### Вебхук провайдера (X-Signature = HMAC-SHA256 hex тіла з whsec-dev)
+POST {{base}}/payments/webhook
+Content-Type: application/json
+X-Signature: {{signature}}
+
+{"eventId":"evt-1","type":"payment.succeeded","orderId":"{{orderId}}","amountCents":3998}
+
+### Checkout (саґа). X-Fail-Payment: 1 для відмови платежу, X-Crash-After: reserve_stock для імітації падіння
+POST {{base}}/checkout
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "items": [{ "productId": "{{productId}}", "qty": 1 }], "address": "Миколаїв, вул. Соборна 1" }
+
+###
+GET {{base}}/checkout/sagas/{{sagaId}}
+Authorization: Bearer {{token}}
+
+### Circuit breaker: провайдер лежить
+POST {{base}}/demo/payment-provider
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "failing": true, "latencyMs": 2000 }
+
+###
+GET {{base}}/demo/payment-provider/state
+Authorization: Bearer {{token}}
+
+### Feature flags (admin)
+PUT {{base}}/admin/flags/products-v2-default
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "enabled": true, "percentage": 30, "allowlist": [] }
+
+###
+GET {{base}}/flags/products-v2-default
+Authorization: Bearer {{token}}
+
+### Файли: presign -> PUT за url (браузер) -> confirm
+POST {{base}}/products/{{productId}}/images/presign
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "contentType": "image/png", "size": 1024 }
+
+###
+POST {{base}}/products/{{productId}}/images/confirm
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "key": "{{key}}" }
+
+###
+GET {{base}}/products/{{productId}}/images
+Authorization: Bearer {{token}}
+
+### Notifications
+GET {{base}}/notifications/emails
+Authorization: Bearer {{token}}
+
+###
+POST {{base}}/demo/email-provider
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "failing": true }
+
+###
+GET {{base}}/notifications/dlq
+Authorization: Bearer {{token}}
+
+### Profiling
+POST {{base}}/demo/generate-orders?count=2000
+Authorization: Bearer {{token}}
+
+###
+GET {{base}}/demo/slow-report
+Authorization: Bearer {{token}}
+
+###
+GET {{base}}/demo/fast-report
+Authorization: Bearer {{token}}
