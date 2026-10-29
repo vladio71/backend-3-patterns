@@ -1,4 +1,6 @@
 // Точка входу API. rawBody: true потрібен для перевірки HMAC-підпису вебхука над сирим тілом.
+// Перший import: трейсинг має запатчити http/express/pg/ioredis до того, як їх завантажить Nest (див. src/tracing.ts).
+import './tracing';
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';

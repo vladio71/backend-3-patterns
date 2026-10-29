@@ -1,4 +1,6 @@
 // Точка входу worker-а: relay outbox, споживач events, worker листів, resumer саґ. Без HTTP.
+// Перший import: трейсинг має запатчити pg/ioredis до того, як їх завантажить Nest (див. src/tracing.ts).
+import './tracing';
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';

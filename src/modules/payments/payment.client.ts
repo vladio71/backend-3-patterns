@@ -1,6 +1,7 @@
 // Клієнт провайдера за circuit breaker-ом. BREAKER_IMPL=opossum (бібліотека) або custom (src/common/circuit-breaker.ts).
 // Коли breaker відкритий, виклик падає одразу з PaymentUnavailableError (503), а не чекає таймаут.
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { SpanStatusCode, trace } from '@opentelemetry/api';
 import OpossumBreaker from 'opossum';
 import { AppConfig, CONFIG } from '../../common/config';
 import { BreakerState, CircuitBreaker, CircuitOpenError } from '../../common/circuit-breaker';
@@ -27,6 +28,7 @@ type ChargeArgs = { orderId: string; amountCents: number; forceDecline: boolean 
 @Injectable()
 export class PaymentClient {
   private readonly logger = new Logger(PaymentClient.name);
+  private readonly tracer = trace.getTracer('patterns-payments');
   private readonly custom: CircuitBreaker | null = null;
   private readonly opossum: OpossumBreaker<[ChargeArgs], { paymentRef: string }> | null = null;
 
@@ -56,14 +58,25 @@ export class PaymentClient {
 
   async charge(orderId: string, amountCents: number, forceDecline: boolean): Promise<{ paymentRef: string }> {
     const args: ChargeArgs = { orderId, amountCents, forceDecline };
-    try {
-      if (this.custom) return await this.custom.exec(() => this.provider.charge(orderId, amountCents, forceDecline));
-      return await this.opossum!.fire(args);
-    } catch (error) {
-      if (error instanceof CircuitOpenError || isOpossumOpen(error)) throw new PaymentUnavailableError();
-      if (error instanceof PaymentDeclinedError) throw error;
-      throw new PaymentProviderError((error as Error).message);
-    }
+    // Ручний span: провайдер фейковий (без HTTP), тому авто-інструментація його не бачить, а в трейсі саґи
+    // була б просто "діра" на latencyMs. Без OTEL_EXPORTER_OTLP_ENDPOINT span нікуди не йде (no-op). Див. docs/tracing.md.
+    return this.tracer.startActiveSpan(
+      'payment.charge',
+      { attributes: { 'payment.order_id': orderId, 'payment.amount_cents': amountCents, 'breaker.state': this.state().state } },
+      async (span) => {
+        try {
+          if (this.custom) return await this.custom.exec(() => this.provider.charge(orderId, amountCents, forceDecline));
+          return await this.opossum!.fire(args);
+        } catch (error) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+          if (error instanceof CircuitOpenError || isOpossumOpen(error)) throw new PaymentUnavailableError();
+          if (error instanceof PaymentDeclinedError) throw error;
+          throw new PaymentProviderError((error as Error).message);
+        } finally {
+          span.end();
+        }
+      },
+    );
   }
 
   /** Повернення коштів іде повз breaker: компенсацію саґи не можна блокувати. */

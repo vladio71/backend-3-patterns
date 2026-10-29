@@ -21,6 +21,7 @@ docker compose up --build
 - довідка API (Scalar): http://localhost:3002/reference, запасний Swagger UI: http://localhost:3002/docs
 - черги (Bull Board): http://localhost:3002/queues
 - MinIO консоль: http://localhost:9001 (minioadmin / minioadmin), бакет `product-images`
+- Jaeger (трейси запитів через API, worker, Postgres, Redis): http://localhost:16686, див. [docs/tracing.md](docs/tracing.md)
 
 Тестові дані: `npm run seed` (з локальної машини, `DB_HOST=localhost`). Два tenants `acme` і `globex`, у кожному `admin@<slug>.test`, `user1@...`, `user2@...`, пароль `password123`, 20 товарів, 5 замовлень, прапорці.
 
@@ -57,7 +58,15 @@ npm run dev:worker   # worker, в іншому
 
 Кожен документ має однакову структуру: Проблема, Наївне рішення і де воно ламається, Правильне рішення, Тест, який це доводить, Спробуй сам.
 
-Повний список endpoints: [docs/ENDPOINTS.md](docs/ENDPOINTS.md). Деплой: [docs/deploy.md](docs/deploy.md).
+Повний список endpoints: [docs/ENDPOINTS.md](docs/ENDPOINTS.md). Деплой: [docs/deploy.md](docs/deploy.md). Трейсинг (OpenTelemetry, Jaeger): [docs/tracing.md](docs/tracing.md).
+
+## Карта залежностей
+
+![Граф модулів](docs/graphs/modules.svg)
+
+Кожен вузол це каталог `src/modules/<name>` (або `src/common`, або окремий файл верхнього рівня), стрілка `A -> B` означає "файли з A імпортують щось із B": `common` має найбільше вхідних стрілок, бо це спільна основа, за ним `products`, `outbox` і `orders`, бо на їхні entity і сервіси спираються інші модулі, `main.ts` і `worker.ts` мають лише вихідні, бо це точки входу. Повний граф по файлах: [docs/graphs/files.svg](docs/graphs/files.svg); перегенерувати обидва: `npm run graph` і `npm run graph:files` (потрібен Graphviz, команда `dot` у PATH); перевірити правила (без циклів, крім пар entity у TypeORM, і `src` не імпортує `test`): `npm run deps:check`.
+
+Довідка по коду (Compodoc): `npm run docs:code`, потім відкрити `docs/compodoc/index.html` у браузері. Сторінка "Modules" показує для кожного Nest-модуля його controllers, providers і imports, тобто те, що `@Module({...})` збирає докупи, і з чого складається граф вище.
 
 ## Як це влаштовано
 
@@ -98,6 +107,7 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 | `EMAIL_ATTEMPTS`, `EMAIL_BACKOFF_MS` | retry листів | 3 / 1000 |
 | `OUTBOX_POLL_MS`, `OUTBOX_BATCH_SIZE` | relay | 1000 / 50 |
 | `SAGA_RESUME_AFTER_MS`, `SAGA_RESUME_POLL_MS` | resumer саґ | 30000 / 5000 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` | трейсинг у Jaeger, порожньо = вимкнено | порожньо (у compose `http://jaeger:4318`) |
 
 ## Тести
 
@@ -121,3 +131,5 @@ E2E читають `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_REDIS_HOST`, `TEST_REDI
 | `npm run migration:run`, `npm run migration:revert` | міграції TypeORM |
 | `npm run seed` | тестові дані |
 | `./scripts/smoke.sh` | curl-прохід по модулях проти запущеного API і worker |
+| `npm run graph`, `npm run graph:files`, `npm run deps:check` | граф модулів і файлів у `docs/graphs/`, перевірка правил імпортів (dependency-cruiser) |
+| `npm run docs:code` | довідка по коду у `docs/compodoc/` (Compodoc, не комітиться) |
