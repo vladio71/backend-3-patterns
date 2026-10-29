@@ -86,6 +86,11 @@ PostgreSQL 16   Redis 7 (кеш прапорців, BullMQ)  |   MinIO / S3 (з�
 
 Auth навмисно мінімальний: `POST /auth/register` (перший користувач нового tenant стає admin), `POST /auth/login`, `GET /auth/me`, ролі `user` і `admin`. Він не предмет проєкту.
 
+## Схема і PDF
+
+- `docs/architecture.excalidraw`: схема проєкту. Відкрити на excalidraw.com через Open або в розширенні Excalidraw у VS Code.
+- `docs/Backend_without_panic.pdf`: короткий документ на всі три проєкти: для кожної теми що це, чому важливо, коли про це думати, коли можна забити, при якому трафіку і як зрозуміти, що час настав.
+
 ## Змінні середовища
 
 Усі описані в `.env.example`. Головні:
