@@ -1,6 +1,15 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "types": ["node"] },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.spec.ts"]
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "scripts/seed.ts"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts"
+  ]
 }

@@ -7,6 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "up": "node scripts/up.mjs",
+    "down": "node scripts/down.mjs",
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
