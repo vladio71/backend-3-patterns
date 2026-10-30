@@ -19,7 +19,7 @@ export class ReportsService {
     const started = performance.now();
     let queries = 0;
 
-    const products = await this.dataSource.getRepository(Product).find({ where: { tenantId } });
+    const products = await this.dataSource.getRepository(Product).find({ where: { tenantId }, order: { createdAt: 'ASC' } }); // той самий порядок, що в fast-report
     queries++;
 
     let json = '['; // (3) JSON збираємо рядком
