@@ -65,3 +65,5 @@ hash(userId:key) % 100 < percentage -> true, інакше false
 
 1. Додай заголовок `Deprecation: true` і `Sunset: <дата>` у відповіді `/v1/products` і напиши в README, як фронтенд має на них реагувати.
 2. Зроби прапорець з параметром tenant: `enabled для tenant acme, вимкнено для globex`. Подумай, що має бути в хеші.
+
+Попередня тема: [multi-tenant](multi-tenant.md) | Наступна тема: [files](files.md)

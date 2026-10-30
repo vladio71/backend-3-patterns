@@ -74,3 +74,5 @@ UPDATE products
 
 1. Додай `version` до замовлень і зроби `PATCH /orders/:id/address` з тією самою перевіркою.
 2. Напиши тест, який доводить, що `repo.save()` з `@VersionColumn` БЕЗ явної умови втрачає оновлення (два `save` зі старої копії, обидва проходять).
+
+Попередня тема: [idempotency](idempotency.md) | Наступна тема: [audit](audit.md)

@@ -74,3 +74,5 @@ fast-report (1 SQL з GROUP BY)     59 / 43 / 40                  1
 
 1. Зроби звіт по днях (`GROUP BY date_trunc('day', o.created_at)`) і подивись через `EXPLAIN ANALYZE`, чи використовує Postgres індекс `orders (tenant_id, status)`. Якщо ні, додай потрібний і виміряй.
 2. Виправ лише третю проблему в `slowReport` (JSON і `includes`), лишивши N+1, і виміряй. Поясни числами, чому це не дало майже нічого.
+
+Попередня тема: [circuit-breaker](circuit-breaker.md) | Наступна тема: [ci](ci.md)

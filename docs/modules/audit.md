@@ -52,3 +52,5 @@ audit_log: entity | entity_id | action      | before        | after         | us
 
 1. Додай у `GET /audit` пагінацію по `at` (cursor) і фільтр `?action=update`.
 2. Зроби soft delete для замовлень і доведи тестом, що `GET /orders` їх не показує, а `audit_log` має `soft_delete`.
+
+Попередня тема: [optimistic-lock](optimistic-lock.md) | Наступна тема: [multi-tenant](multi-tenant.md)

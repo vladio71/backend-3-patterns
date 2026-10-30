@@ -33,3 +33,5 @@ job checks
 
 1. Додай крок `docker build .` у CI, щоб ламання Dockerfile теж ловилось до деплою.
 2. Додай job `deploy`, який після зеленого `checks` на `main` робить `docker compose pull && up -d` на VPS через SSH (див. `docs/deploy.md`). Секрети в GitHub Secrets.
+
+Попередня тема: [profiling](profiling.md)

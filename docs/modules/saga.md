@@ -61,3 +61,5 @@ status = compensated
 
 1. Додай четвертий крок `send_receipt` (подія в outbox) з компенсацією `cancel_receipt`. Перевір, що при падінні на ньому refund і release_stock виконуються в правильному порядку.
 2. Зроби так, щоб `SagaResumer` не підхоплював саґу, яку в цей момент іще виконує API-процес (підказка: `FOR UPDATE SKIP LOCKED` на рядку саґи).
+
+Попередня тема: [outbox](outbox.md) | Наступна тема: [circuit-breaker](circuit-breaker.md)

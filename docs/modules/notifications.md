@@ -54,3 +54,5 @@ notifications-dlq: dlq-email-evt3 { failedReason: 'SMTP недоступний',
 
 1. Зроби `POST /notifications/dlq/:id/retry`: job з DLQ повертається в `notifications` з новим `attempts`, а з DLQ видаляється.
 2. Додай другий тип job `sms` з власним провайдером і лімітом 1 job на секунду (BullMQ `limiter`). Перевір, що лист і SMS для одного замовлення не блокують один одного.
+
+Попередня тема: [files](files.md) | Наступна тема: [outbox](outbox.md)

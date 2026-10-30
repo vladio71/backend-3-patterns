@@ -60,3 +60,5 @@ save(entity)     -> кидає помилку, якщо entity.tenantId інши
 
 1. Додай Row Level Security: `ALTER TABLE products ENABLE ROW LEVEL SECURITY` і політику по `current_setting('app.tenant_id')`. Встанови цю змінну на початку кожної транзакції. Перевір, що навіть "сирий" `dataSource.query('SELECT * FROM products')` без фільтра повертає лише свій tenant.
 2. Зроби endpoint `GET /admin/tenants/:id/stats` для суперадміна, який не належить жодному tenant, і подумай, як `TenantScopedRepository` має поводитись у цьому випадку.
+
+Попередня тема: [audit](audit.md) | Наступна тема: [feature-flags-and-versioning](feature-flags-and-versioning.md)

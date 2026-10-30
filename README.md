@@ -53,18 +53,20 @@ npm run dev:worker   # worker, в іншому
 
 ## 12 модулів
 
+Порядок навчальний: перші шість живуть усередині одного HTTP-запиту (ключ, версія, журнал, tenant, прапорець, файл), з notifications з'являються воркер і події між процесами, далі патерни, що на них спираються, і наостанок вимірювання та CI.
+
 | # | Модуль | Проблема одним рядком | Код | Документ |
 | --- | --- | --- | --- | --- |
 | 1 | idempotency | вебхук "оплата пройшла" приходить двічі, замовлення має бути оплачене один раз | `modules/payments`, `modules/orders/idempotency.interceptor.ts` | [docs/modules/idempotency.md](docs/modules/idempotency.md) |
-| 2 | outbox | "зберегти, потім опублікувати" губить події, коли процес падає між ними | `modules/outbox` | [docs/modules/outbox.md](docs/modules/outbox.md) |
-| 3 | saga | checkout з трьох кроків, платіж упав, резерв складу треба повернути | `modules/checkout` | [docs/modules/saga.md](docs/modules/saga.md) |
-| 4 | optimistic-lock | два менеджери редагують один товар, зміна одного тихо зникає | `modules/products` (`update`) | [docs/modules/optimistic-lock.md](docs/modules/optimistic-lock.md) |
-| 5 | circuit-breaker | провайдер платежів лежить, кожен запит чекає таймаут і займає воркер | `modules/payments/payment.client.ts`, `common/circuit-breaker.ts` | [docs/modules/circuit-breaker.md](docs/modules/circuit-breaker.md) |
-| 6 | audit | хто змінив ціну і як повернути видалений товар | `modules/audit`, soft delete у `modules/products` | [docs/modules/audit.md](docs/modules/audit.md) |
-| 7 | multi-tenant | користувач магазину A не має побачити жодного рядка магазину B | `common/tenant-scoped.repository.ts`, `common/request-context.ts` | [docs/modules/multi-tenant.md](docs/modules/multi-tenant.md) |
-| 8 | feature-flags-and-versioning | змінити форму відповіді, не зламавши старий фронтенд | `modules/feature-flags`, `modules/products/products.controller.ts` | [docs/modules/feature-flags-and-versioning.md](docs/modules/feature-flags-and-versioning.md) |
-| 9 | files | завантаження фото не має проходити через API | `modules/files` | [docs/modules/files.md](docs/modules/files.md) |
-| 10 | notifications | лист мусить піти, навіть якщо API помре одразу після оплати | `modules/notifications` | [docs/modules/notifications.md](docs/modules/notifications.md) |
+| 2 | optimistic-lock | два менеджери редагують один товар, зміна одного тихо зникає | `modules/products` (`update`) | [docs/modules/optimistic-lock.md](docs/modules/optimistic-lock.md) |
+| 3 | audit | хто змінив ціну і як повернути видалений товар | `modules/audit`, soft delete у `modules/products` | [docs/modules/audit.md](docs/modules/audit.md) |
+| 4 | multi-tenant | користувач магазину A не має побачити жодного рядка магазину B | `common/tenant-scoped.repository.ts`, `common/request-context.ts` | [docs/modules/multi-tenant.md](docs/modules/multi-tenant.md) |
+| 5 | feature-flags-and-versioning | змінити форму відповіді, не зламавши старий фронтенд | `modules/feature-flags`, `modules/products/products.controller.ts` | [docs/modules/feature-flags-and-versioning.md](docs/modules/feature-flags-and-versioning.md) |
+| 6 | files | завантаження фото не має проходити через API | `modules/files` | [docs/modules/files.md](docs/modules/files.md) |
+| 7 | notifications | лист мусить піти, навіть якщо API помре одразу після оплати | `modules/notifications` | [docs/modules/notifications.md](docs/modules/notifications.md) |
+| 8 | outbox | "зберегти, потім опублікувати" губить події, коли процес падає між ними | `modules/outbox` | [docs/modules/outbox.md](docs/modules/outbox.md) |
+| 9 | saga | checkout з трьох кроків, платіж упав, резерв складу треба повернути | `modules/checkout` | [docs/modules/saga.md](docs/modules/saga.md) |
+| 10 | circuit-breaker | провайдер платежів лежить, кожен запит чекає таймаут і займає воркер | `modules/payments/payment.client.ts`, `common/circuit-breaker.ts` | [docs/modules/circuit-breaker.md](docs/modules/circuit-breaker.md) |
 | 11 | profiling | звіт працює 10 секунд, знайти чому за числами, а не навмання | `modules/demo/reports.service.ts` | [docs/modules/profiling.md](docs/modules/profiling.md) |
 | 12 | ci | "у мене локально працює" | `.github/workflows/ci.yml` | [docs/modules/ci.md](docs/modules/ci.md) |
 

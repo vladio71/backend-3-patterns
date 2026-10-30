@@ -71,3 +71,5 @@ INSERT INTO idempotency_keys (tenant_id, key, request_hash)   -- 23505 озна�
 
 1. Додай TTL для `idempotency_keys`: ключ старший за 24 години можна використати знову. Напиши міграцію з індексом по `created_at` і тест.
 2. Зроби так, щоб `409 IDEMPOTENCY_IN_PROGRESS` не повертався одразу, а чекав до 2 секунд на завершення першого запиту і віддавав його відповідь.
+
+Наступна тема: [optimistic-lock](optimistic-lock.md)

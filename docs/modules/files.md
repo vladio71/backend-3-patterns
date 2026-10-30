@@ -76,3 +76,5 @@ S3_SECRET_ACCESS_KEY=<IAM secret>
 
 1. Додай `DELETE /products/:id/images/:imageId` з видаленням об'єкта в сховищі (метод уже є в порті) і прибирання "сиріт": об'єктів, для яких `confirm` не прийшов за 1 годину (підказка: записувати presign у таблицю `pending_uploads`).
 2. Зроби обробку зображення після confirm: worker бере job `image.uploaded`, читає оригінал, кладе поруч мініатюру `..._thumb.jpg`.
+
+Попередня тема: [feature-flags-and-versioning](feature-flags-and-versioning.md) | Наступна тема: [notifications](notifications.md)
