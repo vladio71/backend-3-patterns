@@ -12,7 +12,9 @@ import { existsSync, copyFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 
 const PROJECT = 'backend-3-patterns';
+// health також перевіряється у SMOKE нижче.
 const HEALTH_URL = 'http://localhost:3002/health';
+void HEALTH_URL;
 const SMOKE = [["health", "http://localhost:3002/health", {"status": 200, "includes": "ok"}], ["товари v1 (без токена має бути 401)", "http://localhost:3002/v1/products", {"status": 401}], ["контракт API", "http://localhost:3002/reference", {"status": 200}], ["MinIO консоль", "http://localhost:9001/", {"status": 200}]]; // [назва, url, що очікуємо]
 const OPEN = [["контракт API", "http://localhost:3002/reference"], ["Bull Board, черги (email і dead-letter)", "http://localhost:3002/queues"], ["MinIO консоль, minioadmin / minioadmin", "http://localhost:9001"], ["Jaeger, трейси", "http://localhost:16686"]];   // [назва, url]
 const PROFILES = {}; // прапорець -> профіль compose
@@ -48,7 +50,7 @@ function ensureEnv() {
 function stopOtherProjects() {
   const r = run('docker', ['compose', 'ls', '--format', 'json', '--all']);
   if (r.status !== 0) return;
-  let list = [];
+  let list;
   try { list = JSON.parse(r.stdout || '[]'); } catch { return; }
   for (const p of list) {
     const name = p.Name || '';
