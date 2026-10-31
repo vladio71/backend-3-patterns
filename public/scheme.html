@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Схема проєкту</title>
+  <!-- Excalidraw у режимі перегляду, з CDN. Файл схеми: /scheme.excalidraw (копія docs/architecture.excalidraw). -->
+  <link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/index.css" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #fff; color: #1e1e1e; font: 14px system-ui, sans-serif; }
+    @media (prefers-color-scheme: dark) { html, body { background: #121212; color: #e6e6e6; } }
+    header { height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid #8884; }
+    header a { color: inherit; }
+    #root { position: absolute; top: 45px; left: 0; right: 0; bottom: 0; }
+    .note { position: absolute; bottom: 8px; left: 12px; font-size: 12px; opacity: .7; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <b>Схема проєкту</b>
+    <span>зум колесом, пан затиснувши пробіл або колесо</span>
+    <a href="/reference">контракт API</a>
+    <a href="/health">health</a>
+  </header>
+  <div id="root"></div>
+  <div class="note">Той самий файл лежить у docs/architecture.excalidraw, редагувати можна на excalidraw.com</div>
+  <script type="module">
+    import React from 'https://esm.sh/react@19.1.0';
+    import { createRoot } from 'https://esm.sh/react-dom@19.1.0/client';
+    import { Excalidraw, restoreElements } from 'https://esm.sh/@excalidraw/excalidraw@0.18.0?deps=react@19.1.0,react-dom@19.1.0';
+    window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/';
+
+    const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const scene = await (await fetch('/scheme.excalidraw')).json();
+    const elements = restoreElements(scene.elements, null);
+
+    // Вписати схему по ширині і почати з верхнього лівого кута (вузька схема, вписана по висоті, нечитабельна).
+    function fit(api) {
+      const drawn = elements.filter((el) => el.width > 0 || el.height > 0);
+      if (!drawn.length) return;
+      const minX = Math.min(...drawn.map((el) => el.x));
+      const minY = Math.min(...drawn.map((el) => el.y));
+      const maxX = Math.max(...drawn.map((el) => el.x + el.width));
+      const { width } = api.getAppState();
+      if (!width) { setTimeout(() => fit(api), 100); return; }
+      const margin = 24;
+      const zoom = Math.min(1, Math.max(0.2, (width - 2 * margin) / (maxX - minX)));
+      api.updateScene({ appState: { zoom: { value: zoom }, scrollX: margin / zoom - minX, scrollY: margin / zoom - minY } });
+    }
+
+    createRoot(document.getElementById('root')).render(
+      React.createElement(Excalidraw, {
+        viewModeEnabled: true,
+        zenModeEnabled: true,
+        theme,
+        initialData: { elements, appState: { viewBackgroundColor: theme === 'dark' ? '#121212' : '#ffffff' } },
+        excalidrawAPI: (api) => requestAnimationFrame(() => fit(api)),
+      }),
+    );
+  </script>
+</body>
+</html>

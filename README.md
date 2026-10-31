@@ -8,71 +8,31 @@
 
 Один застосунок, одна база, один Redis, окремий worker-процес. Без монорепо і без шарів DDD: `src/modules/<name>/` з controller, service, entity, dto і `src/common/` для спільного.
 
-## Запуск однією командою
+## Запуск
 
-Потрібні тільки Node 22 і запущений Docker Desktop. Далі:
+Потрібні Node 22 і запущений Docker Desktop.
 
 ```
 npm run up
 ```
 
-Скрипт сам створить `.env`, погасить інший проєкт `backend-*`, якщо він зараз працює (усі три ділять порти 5432, 6379, 16686), перевірить, чи вільні порти, підніме все через docker compose, дочекається, поки сервіси стануть healthy, зробить перевірочні запити і надрукує адреси. Відкривати http://localhost:3002/reference.
+Далі відкрити:
 
-Якщо порт тримає щось поза Docker (локальний Postgres або Redis), скрипт назве порт і зупиниться: зупини ту програму і повтори. Зупинити проєкт: `npm run down`. Разом із даними: `npm run down -- --wipe`.
+- http://localhost:3002/reference: контракт API
+- http://localhost:3002/queues: черги, email і dead-letter
+- http://localhost:3002/scheme: схема проєкту
+- http://localhost:9001: MinIO, minioadmin / minioadmin
 
-## Запуск
+Зупинити: `npm run down`. Разом з даними: `npm run down -- --wipe`.
 
-```bash
-cp .env.example .env
-docker compose up --build
-```
+<details>
+<summary>Що робить npm run up і що робити, якщо щось пішло не так</summary>
 
-Після старту:
+Ставить npm-залежності, якщо їх немає, створює `.env`, гасить інший проєкт `backend-*`, якщо він зараз працює (усі три ділять порти 5432, 6379, 16686), перевіряє, чи вільні порти, піднімає все через docker compose, чекає, поки сервіси стануть healthy, робить перевірочні запити і друкує адреси.
 
-- API: http://localhost:3002 (nginx не додано: один процес API, проксі нічого б не додав)
-- довідка API (Scalar): http://localhost:3002/reference, запасний Swagger UI: http://localhost:3002/docs
-- черги (Bull Board): http://localhost:3002/queues
-- MinIO консоль: http://localhost:9001 (minioadmin / minioadmin), бакет `product-images`
-- Jaeger (трейси запитів через API, worker, Postgres, Redis): http://localhost:16686, див. [docs/tracing.md](docs/tracing.md)
+Якщо порт тримає щось поза Docker (локальний Postgres або Redis), скрипт назве порт і зупиниться: зупини ту програму і повтори. Якщо якийсь сервіс упав, скрипт надрукує його логи; повний лог: `docker compose logs <сервіс>`.
 
-Тестові дані: `npm run seed` (з локальної машини, `DB_HOST=localhost`). Два tenants `acme` і `globex`, у кожному `admin@<slug>.test`, `user1@...`, `user2@...`, пароль `password123`, 20 товарів, 5 замовлень, прапорці.
-
-Прохід по всіх модулях через curl: `./scripts/smoke.sh`. Запити для REST Client: `requests.http`.
-
-### Без Docker
-
-Потрібні PostgreSQL 16 і Redis 7. У `.env` вказати їхні host/port, для файлів `STORAGE_DRIVER=fake` (або локальний MinIO і `STORAGE_DRIVER=s3`).
-
-```bash
-npm ci
-npm run migration:run
-npm run seed
-npm run dev          # API, в одному терміналі
-npm run dev:worker   # worker, в іншому
-```
-
-## 12 модулів
-
-Порядок навчальний: перші шість живуть усередині одного HTTP-запиту (ключ, версія, журнал, tenant, прапорець, файл), з notifications з'являються воркер і події між процесами, далі патерни, що на них спираються, і наостанок вимірювання та CI.
-
-| # | Модуль | Проблема одним рядком | Код | Документ |
-| --- | --- | --- | --- | --- |
-| 1 | idempotency | вебхук "оплата пройшла" приходить двічі, замовлення має бути оплачене один раз | `modules/payments`, `modules/orders/idempotency.interceptor.ts` | [docs/modules/idempotency.md](docs/modules/idempotency.md) |
-| 2 | optimistic-lock | два менеджери редагують один товар, зміна одного тихо зникає | `modules/products` (`update`) | [docs/modules/optimistic-lock.md](docs/modules/optimistic-lock.md) |
-| 3 | audit | хто змінив ціну і як повернути видалений товар | `modules/audit`, soft delete у `modules/products` | [docs/modules/audit.md](docs/modules/audit.md) |
-| 4 | multi-tenant | користувач магазину A не має побачити жодного рядка магазину B | `common/tenant-scoped.repository.ts`, `common/request-context.ts` | [docs/modules/multi-tenant.md](docs/modules/multi-tenant.md) |
-| 5 | feature-flags-and-versioning | змінити форму відповіді, не зламавши старий фронтенд | `modules/feature-flags`, `modules/products/products.controller.ts` | [docs/modules/feature-flags-and-versioning.md](docs/modules/feature-flags-and-versioning.md) |
-| 6 | files | завантаження фото не має проходити через API | `modules/files` | [docs/modules/files.md](docs/modules/files.md) |
-| 7 | notifications | лист мусить піти, навіть якщо API помре одразу після оплати | `modules/notifications` | [docs/modules/notifications.md](docs/modules/notifications.md) |
-| 8 | outbox | "зберегти, потім опублікувати" губить події, коли процес падає між ними | `modules/outbox` | [docs/modules/outbox.md](docs/modules/outbox.md) |
-| 9 | saga | checkout з трьох кроків, платіж упав, резерв складу треба повернути | `modules/checkout` | [docs/modules/saga.md](docs/modules/saga.md) |
-| 10 | circuit-breaker | провайдер платежів лежить, кожен запит чекає таймаут і займає воркер | `modules/payments/payment.client.ts`, `common/circuit-breaker.ts` | [docs/modules/circuit-breaker.md](docs/modules/circuit-breaker.md) |
-| 11 | profiling | звіт працює 10 секунд, знайти чому за числами, а не навмання | `modules/demo/reports.service.ts` | [docs/modules/profiling.md](docs/modules/profiling.md) |
-| 12 | ci | "у мене локально працює" | `.github/workflows/ci.yml` | [docs/modules/ci.md](docs/modules/ci.md) |
-
-Кожен документ має однакову структуру: Проблема, Наївне рішення і де воно ламається, Правильне рішення, Тест, який це доводить, Спробуй сам.
-
-Повний список endpoints: [docs/ENDPOINTS.md](docs/ENDPOINTS.md). Деплой: [docs/deploy.md](docs/deploy.md). Трейсинг (OpenTelemetry, Jaeger): [docs/tracing.md](docs/tracing.md).
+</details>
 
 ## Карта залежностей
 
@@ -102,7 +62,7 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 
 ## Схема і PDF
 
-- `docs/architecture.excalidraw`: схема проєкту. Відкрити на excalidraw.com через Open або в розширенні Excalidraw у VS Code.
+- `docs/architecture.excalidraw`: схема проєкту. Після `npm run up` вона відкривається на `/scheme` прямо з API; редагувати можна на excalidraw.com.
 - `docs/Backend_without_panic.pdf`: короткий документ на всі три проєкти: для кожної теми що це, чому важливо, коли про це думати, коли можна забити, при якому трафіку і як зрозуміти, що час настав.
 
 ## Змінні середовища
