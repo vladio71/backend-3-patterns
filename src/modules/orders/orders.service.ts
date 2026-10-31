@@ -34,9 +34,12 @@ export class OrdersService {
     return this.orders.find(where, { createdAt: 'DESC' }, ['items']);
   }
 
+  /** Те саме правило, що в list(): admin бачить будь-яке замовлення tenant, звичайний користувач лише своє.
+   *  Чуже замовлення віддаємо як 404, а не 403: інакше по коду відповіді можна перебирати id і дізнаватись, які існують. */
   async getOrFail(id: string): Promise<Order> {
     const order = await this.orders.findOneById(id, ['items']);
     if (!order) throw notFound('Замовлення');
+    if (this.ctx.role() !== 'admin' && order.userId !== this.ctx.userId()) throw notFound('Замовлення');
     return order;
   }
 

@@ -66,6 +66,12 @@ describe('multi-tenant', () => {
     expect(await ids(bob)).toEqual([bobOrder]);
     expect(await ids(adminA)).toEqual(expect.arrayContaining([aliceOrder, bobOrder]));
     expect(await ids(adminB)).toEqual([]); // чужий tenant не бачить нічого
+
+    // GET /orders/:id під тим самим правилом: чуже замовлення це 404 (не 403, щоб не підказувати, що id існує).
+    await t.http().get(`/orders/${aliceOrder}`).set(auth(alice)).expect(200);
+    await t.http().get(`/orders/${aliceOrder}`).set(auth(bob)).expect(404);
+    await t.http().get(`/orders/${aliceOrder}`).set(auth(adminA)).expect(200);
+    await t.http().get(`/orders/${aliceOrder}`).set(auth(adminB)).expect(404);
   });
 
   it('без токена 401', async () => {

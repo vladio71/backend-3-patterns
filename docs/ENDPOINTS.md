@@ -38,7 +38,7 @@
 | Метод | Шлях | Що |
 | --- | --- | --- |
 | GET | `/orders` | admin: усі замовлення tenant, звичайний користувач: лише свої, з позиціями |
-| GET | `/orders/:id` | одне замовлення |
+| GET | `/orders/:id` | одне замовлення; своє або, для admin, будь-яке в tenant, чуже дає 404 |
 | POST | `/orders` | `{ items: [{ productId, qty }] }`. Заголовок `Idempotency-Key` необов'язковий: повтор віддає ту саму відповідь з `Idempotent-Replayed: true`; інше тіло з тим самим ключем 409 `IDEMPOTENCY_KEY_REUSED`. Ключ унікальний для пари (tenant, користувач). Пише `order.created` в outbox |
 
 ## payments (idempotency вебхука)
