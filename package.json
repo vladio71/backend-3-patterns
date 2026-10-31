@@ -9,7 +9,7 @@
   "scripts": {
     "up": "node scripts/up.mjs",
     "down": "node scripts/down.mjs",
-    "build": "tsc -p tsconfig.build.json && npm run build:scheme",
+    "build": "nest build && npm run build:scheme",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "deps:check": "depcruise src --config .dependency-cruiser.cjs",
@@ -60,6 +60,7 @@
     "@compodoc/compodoc": "2.0.0",
     "@eslint/js": "10.0.1",
     "@excalidraw/excalidraw": "^0.18.1",
+    "@nestjs/cli": "^11.0.10",
     "@nestjs/testing": "11.2.8",
     "@types/express": "5.0.6",
     "@types/jest": "30.0.0",
