@@ -2,13 +2,13 @@
 // Що робить:
 //   1. ставить npm-залежності, якщо їх немає, і створює .env з .env.example
 //   2. гасить інші проєкти backend-*, які зараз працюють у Docker (вони ділять ті самі порти)
-//   3. перевіряє, чи вільні порти цього проєкту; якщо порт тримає щось поза Docker, каже що і зупиняється
+//   3. перевіряє порти цього проєкту; зайнятий порт замінює на найближчий вільний (через змінні в .env)
 //   4. docker compose up --build -d
 //   5. чекає, поки всі сервіси стануть healthy
 //   6. робить перевірочні запити і друкує, що відкривати
 // Прапорці: --wipe (видалити томи, тобто дані, перед запуском), інших немає
 import { spawnSync } from 'node:child_process';
-import { existsSync, copyFileSync } from 'node:fs';
+import { existsSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 
 const PROJECT = 'backend-3-patterns';
@@ -70,19 +70,14 @@ function stopOtherProjects() {
   }
 }
 
-// 3. порти
-function publishedPorts() {
-  const r = run('docker', ['compose', ...profileArgs, 'config', '--format', 'json']);
-  if (r.status !== 0) fail(`docker compose config впав:\n${r.stderr}`);
-  const cfg = JSON.parse(r.stdout);
-  const ports = [];
-  for (const [svc, def] of Object.entries(cfg.services || {})) {
-    for (const p of def.ports || []) {
-      const published = typeof p === 'string' ? p.split(':')[0] : p.published;
-      if (published) ports.push({ svc, port: Number(String(published).split('-')[0]) });
-    }
+// 3. порти. У docker-compose.yml кожен порт хоста записаний як "${VAR:-типовий}:контейнер".
+function portSpecs() {
+  const text = readFileSync('docker-compose.yml', 'utf8');
+  const specs = [];
+  for (const m of text.matchAll(/"\$\{([A-Z_]+):-(\d+)\}:(\d+)"/g)) {
+    specs.push({ variable: m[1], defaultPort: Number(m[2]) });
   }
-  return ports;
+  return specs;
 }
 
 function isListening(port) {
@@ -105,22 +100,56 @@ function dockerPortOwners() {
   return owners;
 }
 
-async function checkPorts() {
-  const owners = dockerPortOwners();
-  const busy = [];
-  for (const { svc, port } of publishedPorts()) {
-    if (!(await isListening(port))) continue;
-    const owner = owners.get(port);
-    if (owner && owner.startsWith(PROJECT)) continue; // наш же контейнер, compose його перезапустить
-    busy.push({ svc, port, owner });
+function readEnvFile() {
+  if (!existsSync('.env')) return {};
+  const out = {};
+  for (const line of readFileSync('.env', 'utf8').split('\n')) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m) out[m[1]] = m[2];
   }
-  if (busy.length === 0) return;
-  const lines = busy.map(({ svc, port, owner }) =>
-    owner ? `  порт ${port} (${svc}) тримає контейнер ${owner}` : `  порт ${port} (${svc}) тримає щось поза Docker`);
-  const hint = process.platform === 'win32'
-    ? '  Windows: Get-NetTCPConnection -LocalPort <порт> -State Listen | Select OwningProcess, потім Get-Process -Id <pid>'
-    : '  Linux/mac: lsof -iTCP:<порт> -sTCP:LISTEN';
-  fail(`Порти зайняті, запуск зупинено:\n${lines.join('\n')}\n\nЯк знайти, хто тримає порт:\n${hint}\nЗазвичай це локально встановлений Postgres або Redis. Зупини їх або зміни порт у docker-compose.yml.`);
+  return out;
+}
+
+function writeEnvVars(vars) {
+  let text = existsSync('.env') ? readFileSync('.env', 'utf8') : '';
+  for (const [key, value] of Object.entries(vars)) {
+    const re = new RegExp(`^${key}=.*$`, 'm');
+    text = re.test(text) ? text.replace(re, `${key}=${value}`) : text.replace(/\n?$/, '\n') + `${key}=${value}\n`;
+  }
+  writeFileSync('.env', text);
+}
+
+/** Для кожного порту хоста: якщо зайнятий не нашим контейнером, беремо наступний вільний. Результат пишемо в .env. */
+async function resolvePorts() {
+  const owners = dockerPortOwners();
+  const envNow = readEnvFile();
+  const taken = new Set();
+  const chosen = {};
+  const moved = [];
+  for (const { variable, defaultPort } of portSpecs()) {
+    let port = Number(envNow[variable]) || defaultPort;
+    for (;;) {
+      const owner = owners.get(port);
+      const ours = owner && owner.startsWith(PROJECT);
+      const busy = !taken.has(port) && !ours && (await isListening(port));
+      if (!busy && !taken.has(port)) break;
+      port += 1;
+    }
+    taken.add(port);
+    chosen[variable] = port;
+    if (port !== defaultPort) moved.push(`${variable}: ${defaultPort} зайнятий, беру ${port}`);
+  }
+  writeEnvVars(chosen);
+  if (moved.length) log('Порти:\n  ' + moved.join('\n  '));
+  return chosen;
+}
+
+/** Підставляє вибрані порти в адреси для друку. */
+function withPorts(url, ports) {
+  return url.replace(/localhost:(\d+)/, (whole, p) => {
+    const spec = portSpecs().find((x) => x.defaultPort === Number(p));
+    return spec && ports[spec.variable] ? `localhost:${ports[spec.variable]}` : whole;
+  });
 }
 
 // 4. up
@@ -161,8 +190,9 @@ async function waitHealthy(timeoutMs = 240_000) {
 }
 
 // 6. smoke
-async function smoke() {
-  for (const [name, url, expect] of SMOKE) {
+async function smoke(ports) {
+  for (const [name, rawUrl, expect] of SMOKE) {
+    const url = withPorts(rawUrl, ports);
     let res = null, text = '', err = null;
     // Сервіс може ще секунду-дві підніматись після healthy, тому кілька спроб.
     for (let attempt = 0; attempt < 15; attempt++) {
@@ -186,13 +216,14 @@ async function smoke() {
   ensureDeps();
   ensureEnv();
   stopOtherProjects();
-  await checkPorts();
+  const ports = await resolvePorts();
   composeUp();
   log('\nЧекаю, поки сервіси стануть healthy...');
   await waitHealthy();
   log('\nПеревірка:');
-  await smoke();
+  await smoke(ports);
   log('\nГотово. Відкривай:');
-  for (const [name, url] of OPEN) log(`  ${url.padEnd(38)} ${name}`);
+  for (const [name, url] of OPEN) log(`  ${withPorts(url, ports).padEnd(38)} ${name}`);
   log(`\nЗупинити: npm run down (дані лишаються) або npm run down -- --wipe (разом з даними).`);
+  if (Object.values(ports).some((p, i) => p !== portSpecs()[i].defaultPort)) log('Порти, що відрізняються від типових, записані в .env. Видали ці рядки, щоб повернути типові.');
 })();
