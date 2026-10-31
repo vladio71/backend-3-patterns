@@ -1,7 +1,7 @@
 // Модуль outbox: подія записана в одній транзакції з замовленням; relay, що впав перед publish, не губить подію;
 // споживач застосовує ефект один раз навіть при повторній доставці.
 import { Job } from 'bullmq';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { ConsumedEvent } from '../../src/modules/outbox/consumed-event.entity';
 import { EventsConsumer } from '../../src/modules/outbox/events.consumer';
 import { OutboxEvent } from '../../src/modules/outbox/outbox-event.entity';
@@ -51,15 +51,22 @@ describe('outbox', () => {
     const find = () => ds.getRepository(OutboxEvent).createQueryBuilder('e')
       .where(`e.type = 'order.created' AND e.payload->>'orderId' = :orderId`, { orderId }).getOneOrFail();
 
+    // Подія, на якій relay упаде: найстаріша неопублікована (у черзі можуть бути події з попередніх тестів).
+    const oldest = await ds.getRepository(OutboxEvent).findOneOrFail({ where: { publishedAt: IsNull() }, order: { createdAt: 'ASC' } });
+    const attemptsBefore = oldest.attempts;
+
     relay.failNextPublish = true;
     await expect(relay.tick()).rejects.toThrow('Імітація падіння relay');
     const afterCrash = await find();
     expect(afterCrash.publishedAt).toBeNull(); // транзакція відкотилась, рядок не втрачено
+    // attempts рахує невдалі публікації і переживає відкат (окрема коротка транзакція)
+    expect((await ds.getRepository(OutboxEvent).findOneByOrFail({ id: oldest.id })).attempts).toBe(attemptsBefore + 1);
 
     const published = await relay.tick();
     expect(published).toBeGreaterThanOrEqual(1);
     const afterRetry = await find();
     expect(afterRetry.publishedAt).not.toBeNull();
+    expect((await ds.getRepository(OutboxEvent).findOneByOrFail({ id: oldest.id })).attempts).toBe(attemptsBefore + 1); // успішна публікація лічильник не чіпає
 
     const job = await queues.events.getJob(afterRetry.id);
     expect(job).toBeDefined();

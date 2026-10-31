@@ -26,6 +26,7 @@ describe('files', () => {
     expect(res.body.upload.method).toBe('PUT');
     expect(res.body.upload.headers).toEqual({ 'Content-Type': 'image/png', 'Content-Length': '1234' });
     expect(res.body.maxBytes).toBe(2 * 1024 * 1024);
+    expect(res.body.upload.expiresInSec).toBe(120); // S3_PRESIGN_EXPIRES_SEC з test/e2e/env.ts
     expect(storage.presigned).toContain(res.body.key);
   });
 
@@ -68,5 +69,30 @@ describe('files', () => {
     const res = await t.http().post(`/products/${productId}/images/confirm`).set(auth(admin)).send({ key: presign.body.key }).expect(413);
     expect(res.body.code).toBe('IMAGE_TOO_LARGE');
     expect(await storage.head(presign.body.key)).toBeNull();
+  });
+
+  it('DELETE: рядок у базі видаляється, навіть якщо сховище недоступне (об\'єкт-сирота лишається для прибирання)', async () => {
+    const presign = await t.http().post(`/products/${productId}/images/presign`).set(auth(admin)).send({ contentType: 'image/png', size: 100 }).expect(201);
+    const key = presign.body.key;
+    storage.upload(key, 100, 'image/png');
+    const image = await t.http().post(`/products/${productId}/images/confirm`).set(auth(admin)).send({ key }).expect(201);
+
+    const failure = jest.spyOn(storage, 'remove').mockRejectedValueOnce(new Error('S3 недоступний'));
+    await t.http().delete(`/products/${productId}/images/${image.body.id}`).set(auth(admin)).expect(200);
+    expect(failure).toHaveBeenCalledWith(key);
+    failure.mockRestore();
+
+    const list = await t.http().get(`/products/${productId}/images`).set(auth(admin)).expect(200);
+    expect(list.body.map((i: { id: string }) => i.id)).not.toContain(image.body.id); // клієнт зображення вже не бачить
+    expect(storage.objects.has(key)).toBe(true); // а об'єкт у сховищі лишився
+  });
+
+  it('DELETE у нормі видаляє і рядок, і об\'єкт', async () => {
+    const presign = await t.http().post(`/products/${productId}/images/presign`).set(auth(admin)).send({ contentType: 'image/png', size: 100 }).expect(201);
+    const key = presign.body.key;
+    storage.upload(key, 100, 'image/png');
+    const image = await t.http().post(`/products/${productId}/images/confirm`).set(auth(admin)).send({ key }).expect(201);
+    await t.http().delete(`/products/${productId}/images/${image.body.id}`).set(auth(admin)).expect(200);
+    expect(storage.objects.has(key)).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 // Relay: раз на секунду бере до 50 неопублікованих подій (FOR UPDATE SKIP LOCKED), кладе їх у чергу
 // і позначає published_at. Якщо процес упаде посередині, транзакція відкотиться і рядок лишиться неопублікованим.
+// Лічильник attempts рахує НЕВДАЛІ публікації. Його не можна збільшувати в тій самій транзакції (вона відкотиться разом
+// із помилкою), тому після відкату він росте окремим коротким UPDATE.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AppConfig, CONFIG } from '../../common/config';
@@ -38,6 +40,7 @@ export class OutboxRelay {
   async tick(): Promise<number> {
     if (this.running) return 0; // попередній tick ще працює
     this.running = true;
+    let currentId: string | null = null; // подія, на якій транзакція впала
     try {
       return await this.dataSource.transaction(async (manager) => {
         const events = await manager
@@ -53,6 +56,7 @@ export class OutboxRelay {
         if (events.length === 0) return 0;
 
         for (const event of events) {
+          currentId = event.id;
           if (this.failNextPublish) {
             this.failNextPublish = false;
             throw new Error('Імітація падіння relay перед publish');
@@ -61,13 +65,24 @@ export class OutboxRelay {
           // jobId = id події: якщо relay встиг опублікувати, але не встиг закомітити, повторний add буде no-op.
           await this.queues.events.add(event.type, data, { jobId: event.id, removeOnComplete: 1000, removeOnFail: 1000 });
           event.publishedAt = new Date();
-          event.attempts += 1;
           await manager.save(OutboxEvent, event);
         }
         return events.length;
       });
+    } catch (error) {
+      if (currentId) await this.countFailure(currentId);
+      throw error;
     } finally {
       this.running = false;
+    }
+  }
+
+  /** Окрема коротка транзакція (автокоміт): основна вже відкотилась, а лічильник має пережити відкат. */
+  private async countFailure(eventId: string): Promise<void> {
+    try {
+      await this.dataSource.getRepository(OutboxEvent).increment({ id: eventId }, 'attempts', 1);
+    } catch (error) {
+      this.logger.error(`Не вдалося збільшити attempts для події ${eventId}: ${String(error)}`);
     }
   }
 }

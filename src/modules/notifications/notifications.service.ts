@@ -5,22 +5,24 @@ import { AppConfig, CONFIG } from '../../common/config';
 import { QUEUES, Queues } from '../queues/queues.module';
 import { User } from '../auth/user.entity';
 
-export type EmailJobData = { to: string; subject: string; body: string; orderId: string | null; eventId: string | null };
+// tenantId лежить у job, щоб DLQ можна було показувати лише власнику листа. null для системних листів без tenant.
+export type EmailJobData = { to: string; subject: string; body: string; orderId: string | null; eventId: string | null; tenantId: string | null };
 
 @Injectable()
 export class NotificationsService {
   constructor(@Inject(QUEUES) private readonly queues: Queues, @Inject(CONFIG) private readonly config: AppConfig) {}
 
-  async enqueueOrderPaidEmail(manager: EntityManager, eventId: string, payload: Record<string, unknown>): Promise<void> {
+  async enqueueOrderPaidEmail(manager: EntityManager, eventId: string, tenantId: string, payload: Record<string, unknown>): Promise<void> {
     const userId = typeof payload.userId === 'string' ? payload.userId : null;
     const orderId = typeof payload.orderId === 'string' ? payload.orderId : null;
-    const user = userId ? await manager.findOne(User, { where: { id: userId } }) : null;
+    const user = userId ? await manager.findOne(User, { where: { id: userId, tenantId } }) : null;
     await this.enqueue({
       to: user?.email ?? 'unknown@example.com',
       subject: `Замовлення ${orderId ?? ''} оплачено`,
       body: `Дякуємо! Замовлення ${orderId ?? ''} оплачено, готуємо відправлення.`,
       orderId,
       eventId,
+      tenantId,
     }, `email-${eventId}`); // jobId від події: повторна доставка тієї самої події не створить другого листа
   }
 

@@ -71,7 +71,8 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 
 | Змінна | Що | Типово |
 | --- | --- | --- |
-| `PORT` | порт API | `3002` |
+| `PORT` | порт API (у docker compose в контейнері завжди 3002) | `3002` |
+| `NODE_ENV` | `production` вимагає власних `JWT_SECRET` і `PAYMENT_WEBHOOK_SECRET` | не задано (у compose `development`) |
 | `JWT_SECRET` | секрет JWT | `dev-secret-change-me` |
 | `PAYMENT_WEBHOOK_SECRET` | секрет HMAC вебхука | `whsec-dev` |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | PostgreSQL | `localhost:5432`, `patterns` |
@@ -80,6 +81,7 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 | `STORAGE_DRIVER` | `s3` або `fake` | `s3` |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE` | сховище (MinIO або AWS) | MinIO локально |
 | `MAX_IMAGE_BYTES` | ліміт зображення | `2097152` |
+| `S3_PRESIGN_EXPIRES_SEC` | скільки секунд діють presigned URL | `300` |
 | `BREAKER_IMPL` | `opossum` або `custom` | `opossum` |
 | `BREAKER_FAILURE_THRESHOLD`, `BREAKER_WINDOW_MS`, `BREAKER_RESET_MS`, `BREAKER_CALL_TIMEOUT_MS` | параметри breaker | 5 / 10000 / 30000 / 2000 |
 | `FLAGS_CACHE_TTL_SEC` | кеш прапорців | `10` |
@@ -92,9 +94,10 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 
 ```bash
 npm run lint       # eslint
-npm run build      # tsc
-npm test           # unit: 11 тестів (breaker, rollout, підпис вебхука), без бази
-npm run test:e2e   # e2e: 47 тестів, 11 suites, потрібні Postgres і Redis
+npm run typecheck  # tsc --noEmit, разом з test/ і scripts/
+npm run build      # nest build
+npm test           # unit: 33 тести (breaker, rollout і Redis-fallback прапорців, підпис вебхука, config, health, email worker, seed), без бази
+npm run test:e2e   # e2e: 62 тести, 11 suites, потрібні Postgres і Redis
 ```
 
 E2E читають `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_REDIS_HOST`, `TEST_REDIS_PORT` (типово localhost, 5432, 6379), база `patterns_test`, Redis db `1`. Міграції виконуються в `globalSetup`. Кожен suite створює свій tenant, тому базу між прогонами чистити не треба.

@@ -56,7 +56,7 @@ describe('notifications', () => {
     const email = t.app.get(FakeEmailProvider);
     await email.setFailing(true);
     const jobId = `email-test-dlq-${Date.now()}`;
-    await t.app.get(NotificationsService).enqueue({ to: 'dlq@example.com', subject: 'Тест DLQ', body: 'x', orderId: null, eventId: null }, jobId);
+    await t.app.get(NotificationsService).enqueue({ to: 'dlq@example.com', subject: 'Тест DLQ', body: 'x', orderId: null, eventId: null, tenantId: admin.tenantId }, jobId);
 
     await waitFor(async () => (await queues.notificationsDlq.getJob(`dlq-${jobId}`)) !== undefined, 15_000);
     const dlqJob = await queues.notificationsDlq.getJob(`dlq-${jobId}`);
@@ -68,6 +68,11 @@ describe('notifications', () => {
 
     const dlq = await t.http().get('/notifications/dlq').set(auth(admin)).expect(200);
     expect(dlq.body.map((j: { id: string }) => j.id)).toContain(`dlq-${jobId}`);
+
+    // DLQ показує лише листи свого tenant: адмін іншого tenant цей job не бачить.
+    const other = await registerTenant(t, 'notif-other');
+    const otherDlq = await t.http().get('/notifications/dlq').set(auth(other)).expect(200);
+    expect(otherDlq.body.map((j: { id: string }) => j.id)).not.toContain(`dlq-${jobId}`);
     await email.setFailing(false);
   });
 
@@ -75,11 +80,12 @@ describe('notifications', () => {
     const email = t.app.get(FakeEmailProvider);
     await email.setFailing(true);
     const jobId = `email-test-retry-${Date.now()}`;
-    await t.app.get(NotificationsService).enqueue({ to: 'retry@example.com', subject: 'Тест retry', body: 'x', orderId: null, eventId: null }, jobId);
+    await t.app.get(NotificationsService).enqueue({ to: 'retry@example.com', subject: 'Тест retry', body: 'x', orderId: null, eventId: null, tenantId: admin.tenantId }, jobId);
     await waitFor(async () => ((await queues.notifications.getJob(jobId))?.attemptsMade ?? 0) >= 1, 10_000);
     await email.setFailing(false);
 
-    await waitFor(async () => (await ds.getRepository(SentEmail).count({ where: { to: 'retry@example.com' } })) === 1, 15_000);
+    // За jobId, а не за адресою: база між прогонами не чиститься, і лист від попереднього прогону не має зараховуватись.
+    await waitFor(async () => (await ds.getRepository(SentEmail).count({ where: { jobId } })) === 1, 15_000);
     expect(await queues.notificationsDlq.getJob(`dlq-${jobId}`)).toBeUndefined();
   });
 });

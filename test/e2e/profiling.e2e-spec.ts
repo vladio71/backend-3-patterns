@@ -1,5 +1,5 @@
 // Модуль profiling: slow-report і fast-report повертають однакові дані; швидкий робить 1 запит замість сотень і помітно швидший.
-import { auth, createApp, createProduct, registerTenant, Session, TestApp } from './helpers';
+import { auth, createApp, createProduct, registerTenant, registerUser, Session, TestApp } from './helpers';
 
 describe('profiling', () => {
   let t: TestApp;
@@ -26,5 +26,11 @@ describe('profiling', () => {
     expect(fast.body.rows.reduce((sum: number, r: { soldQty: number }) => sum + r.soldQty, 0)).toBeGreaterThan(0);
     expect(fast.body.timingMs).toBeLessThan(slow.body.timingMs);
     console.log(`profiling: slow ${slow.body.timingMs} ms / ${slow.body.queries} запитів, fast ${fast.body.timingMs} ms / 1 запит`);
+  });
+
+  it('важкі демо-ендпоїнти (slow-report, generate-orders) доступні лише admin', async () => {
+    const user = await registerUser(t, admin.tenantSlug, 'plain-profiling@example.com');
+    await t.http().get('/demo/slow-report').set(auth(user)).expect(403);
+    await t.http().post('/demo/generate-orders').set(auth(user)).query({ count: 5 }).expect(403);
   });
 });

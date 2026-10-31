@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Roles } from '../../common/decorators';
+import { RequestContext } from '../../common/request-context';
 import { QUEUES, Queues } from '../queues/queues.module';
 import { SentEmail } from './sent-email.entity';
 
@@ -10,7 +11,11 @@ import { SentEmail } from './sent-email.entity';
 @ApiBearerAuth()
 @Controller('notifications')
 export class NotificationsController {
-  constructor(@InjectRepository(SentEmail) private readonly sent: Repository<SentEmail>, @Inject(QUEUES) private readonly queues: Queues) {}
+  constructor(
+    @InjectRepository(SentEmail) private readonly sent: Repository<SentEmail>,
+    @Inject(QUEUES) private readonly queues: Queues,
+    private readonly ctx: RequestContext,
+  ) {}
 
   /** Листи, які "надіслав" фейковий провайдер. Фільтр ?to=email. */
   @Roles('admin')
@@ -19,11 +24,15 @@ export class NotificationsController {
     return this.sent.find({ where: to ? { to } : {}, order: { sentAt: 'DESC' }, take: 100 });
   }
 
-  /** Що лежить у DLQ: тіло job і причина. */
+  /**
+   * Що лежить у DLQ: тіло job і причина. Лише листи поточного tenant (job.data.tenantId).
+   * Job-и без tenantId (старі, до цієї зміни, або системні) не показуємо нікому: краще сховати, ніж віддати чужий лист.
+   */
   @Roles('admin')
   @Get('dlq')
   async dlq(): Promise<Array<{ id: string | undefined; data: unknown }>> {
+    const tenantId = this.ctx.tenantIdOrFail();
     const jobs = await this.queues.notificationsDlq.getJobs(['waiting', 'completed', 'failed', 'delayed'], 0, 100);
-    return jobs.map((job) => ({ id: job.id, data: job.data }));
+    return jobs.filter((job) => (job.data as { tenantId?: string | null }).tenantId === tenantId).map((job) => ({ id: job.id, data: job.data }));
   }
 }

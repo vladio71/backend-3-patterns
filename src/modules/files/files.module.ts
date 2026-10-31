@@ -18,7 +18,7 @@ import { S3ObjectStorage } from './s3-object-storage';
       provide: OBJECT_STORAGE,
       inject: [CONFIG],
       useFactory: (config: AppConfig): ObjectStorage =>
-        config.storage.driver === 'fake' ? new FakeObjectStorage() : new S3ObjectStorage(config.storage),
+        config.storage.driver === 'fake' ? new FakeObjectStorage(config.storage.presignExpiresSec) : new S3ObjectStorage(config.storage),
     },
   ],
   exports: [FilesService, OBJECT_STORAGE],

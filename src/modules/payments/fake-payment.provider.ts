@@ -6,6 +6,9 @@ import Redis from 'ioredis';
 import { REDIS } from '../../common/redis.provider';
 
 export const PAYMENT_PROVIDER_KEY = 'demo:payment-provider';
+// "Пам'ять" самого провайдера: ключ ідемпотентності (orderId) -> paymentRef. Справжній провайдер (Stripe та інші) теж
+// зберігає відповідь на Idempotency-Key у себе, а не в нашій базі.
+export const PAYMENT_CHARGES_KEY = 'demo:payment-provider:charges';
 
 export type ProviderState = { failing: boolean; latencyMs: number };
 
@@ -25,11 +28,20 @@ export class PaymentDeclinedError extends Error {
 export class FakePaymentProvider {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
+  /**
+   * Ідемпотентне списання: ключ це orderId. Повторний виклик для того самого замовлення повертає той самий paymentRef
+   * і гроші вдруге не списує. Це страхує від падіння процесу між charge і записом у нашу базу: після рестарту
+   * саґа викличе charge ще раз, а клієнта буде списано один раз.
+   */
   async charge(orderId: string, amountCents: number, forceDecline: boolean): Promise<{ paymentRef: string }> {
     await this.simulate();
+    const already = await this.redis.hget(PAYMENT_CHARGES_KEY, orderId);
+    if (already) return { paymentRef: already };
     if (amountCents % 100 === 99) throw new PaymentDeclinedError('сума закінчується на .99');
     if (forceDecline) throw new PaymentDeclinedError('заголовок X-Fail-Payment');
-    return { paymentRef: `pay_${randomUUID()}` };
+    const paymentRef = `pay_${randomUUID()}`;
+    await this.redis.hset(PAYMENT_CHARGES_KEY, orderId, paymentRef);
+    return { paymentRef };
   }
 
   async refund(paymentRef: string): Promise<{ refundRef: string }> {

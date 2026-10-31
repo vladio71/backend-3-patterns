@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
+import { VALIDATION_OPTIONS } from './common/validation';
 import { RequestContextMiddleware } from './common/request-context.middleware';
 import { dataSourceOptions } from './data-source';
 import { AuditModule } from './modules/audit/audit.module';
@@ -42,7 +43,7 @@ import { QueuesModule } from './modules/queues/queues.module';
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
-    { provide: APP_PIPE, useValue: new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }) },
+    { provide: APP_PIPE, useValue: new ValidationPipe(VALIDATION_OPTIONS) },
   ],
 })
 export class AppModule implements NestModule {

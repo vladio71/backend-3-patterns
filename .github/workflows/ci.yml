@@ -1,4 +1,4 @@
-# CI: lint, build, unit, e2e. Для e2e Postgres і Redis піднімаються як service containers.
+# CI: lint, typecheck, deps:check, build, unit, e2e. Для e2e Postgres і Redis піднімаються як service containers.
 name: ci
 
 on:
@@ -38,6 +38,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run deps:check
       - run: npm run build
       - run: npm test
       - run: npm run test:e2e

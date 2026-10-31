@@ -1,17 +1,21 @@
 # Повний стенд: postgres, redis, minio (+ створення бакета), jaeger, api, worker.
 # Трейси: http://localhost:16686 (див. docs/tracing.md).
 # nginx тут не додає нічого (один API-процес), тому API відкритий напряму на localhost:3002.
+#
+# Паролі й ключі нижче записані як ${ЗМІННА:-типове значення}: compose бере змінну з .env (або з оточення),
+# а якщо її там немає, підставляє типове значення для локального стенду. Для сервера задайте свої значення в .env
+# ДО першого запуску: Postgres і MinIO записують пароль у свій volume при створенні, пізніше його змінює лише `down -v` (дані зникнуть).
 services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: patterns
-      POSTGRES_PASSWORD: patterns
-      POSTGRES_DB: patterns
+      POSTGRES_USER: ${DB_USER:-patterns}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-patterns}
+      POSTGRES_DB: ${DB_NAME:-patterns}
     ports: ["${PG_PORT:-5432}:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U patterns"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-patterns}"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -29,8 +33,8 @@ services:
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
     ports: ["${MINIO_PORT:-9000}:9000", "${MINIO_CONSOLE_PORT:-9001}:9001"]   # 9000 S3 API, 9001 веб-консоль
     volumes: [miniodata:/data]
     healthcheck:
@@ -46,7 +50,7 @@ services:
       minio: { condition: service_healthy }
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY_ID:-minioadmin} ${S3_SECRET_ACCESS_KEY:-minioadmin} &&
       mc mb --ignore-existing local/product-images &&
       echo 'bucket product-images ready'"
 
@@ -61,17 +65,30 @@ services:
       - path: .env
         required: false
     environment:
+      # Порт у контейнері фіксований: на нього вказують мапінг портів і healthcheck нижче. Якщо в .env є інший PORT,
+      # без цього рядка (environment сильніший за env_file) API слухав би інший порт, і мапінг "3002" вів би в нікуди.
+      PORT: 3002
+      # Dockerfile ставить NODE_ENV=production, а в production сервіс не стартує з JWT_SECRET і PAYMENT_WEBHOOK_SECRET за замовчуванням
+      # (src/common/config.ts), і seed не чіпає базу з даними. Для локального стенду беремо development.
+      # На сервері задайте NODE_ENV=production у .env разом зі своїми секретами (docs/deploy.md).
+      NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: postgres
+      DB_USER: ${DB_USER:-patterns}
+      DB_PASSWORD: ${DB_PASSWORD:-patterns}
+      DB_NAME: ${DB_NAME:-patterns}
       REDIS_HOST: redis
       S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
       STORAGE_DRIVER: s3
       # Трейсинг у Jaeger (OTLP/HTTP). Порожньо = вимкнено.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_SERVICE_NAME: api
-    # Міграції, потім seed (ідемпотентний), потім API: усе з того самого образу.
+    # Міграції, потім seed (ідемпотентний; у production пропускається, якщо дані вже є), потім API: усе з того самого образу.
     command: sh -c "node node_modules/typeorm/cli.js migration:run -d dist/src/data-source.js && node dist/scripts/seed.js && node dist/src/main.js"
     ports: ["${API_PORT:-3002}:3002"]
     healthcheck:
+      # /health віддає 503, коли база або Redis недоступні, тому r.ok (статус 2xx) тут і є перевіркою залежностей.
       test: ["CMD", "node", "-e", "fetch('http://localhost:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 3s
@@ -88,15 +105,23 @@ services:
       - path: .env
         required: false
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: postgres
+      DB_USER: ${DB_USER:-patterns}
+      DB_PASSWORD: ${DB_PASSWORD:-patterns}
+      DB_NAME: ${DB_NAME:-patterns}
       REDIS_HOST: redis
       S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
       STORAGE_DRIVER: s3
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
       OTEL_SERVICE_NAME: worker
     command: node dist/src/worker.js
     depends_on:
-      api: { condition: service_started }
+      # Міграції виконує команда сервісу api, тому worker чекає, поки api стане healthy (міграції пройшли, API відповідає),
+      # а не просто запуститься: інакше worker міг би стартувати на базі без таблиць.
+      api: { condition: service_healthy }
 
 volumes:
   pgdata:

@@ -29,16 +29,16 @@ webhook/checkout -> outbox (Postgres, та сама транзакція, що �
    -> EmailWorker: FakeEmailProvider.send -> sent_emails
 ```
 
-Job `email` у `notifications`: `attempts: 3`, `backoff: exponential, delay: EMAIL_BACKOFF_MS` (1 с, 2 с, 4 с). `jobId = email-<eventId>`: повторна обробка події не створить другого листа.
+Job `email` у `notifications`: `attempts: 3`, `backoff: exponential, delay: EMAIL_BACKOFF_MS` (1 с). Три спроби означають дві паузи між ними: 1 с після першої невдачі, 2 с після другої. Після третьої невдачі чекати вже нема чого, job іде в DLQ (третьої паузи в 4 с не буде). `jobId = email-<eventId>`: повторна обробка події не створить другого листа.
 
-Dead-letter: `EmailWorker` слухає `failed`. Якщо `attemptsMade >= attempts`, job копіюється в чергу `notifications-dlq` разом з `failedReason`. Лист не зник, він лежить там, де його побачить людина (`GET /notifications/dlq`, Bull Board) і звідки його можна повторити після лагодження SMTP.
+Dead-letter: копію в `notifications-dlq` робить сам обробник (`EmailWorker.handle`) на останній спробі, коли `attemptsMade + 1 >= attempts`, і лише потім кидає помилку далі. Так зроблено не в слухачі події `failed`, бо слухач стріляє вже після того, як job позначено failed, і тільки в процесі, що його обробляв: якщо процес помре між цими двома моментами, job failed, а в DLQ його немає. В обробнику порядок інший: спершу копія з `failedReason`, потім помилка. Лист не зник, він лежить там, де його побачить людина (`GET /notifications/dlq`, Bull Board) і звідки його можна повторити після лагодження SMTP. `GET /notifications/dlq` показує лише листи поточного tenant: у job є `tenantId`.
 
 `FakeEmailProvider` пише в таблицю `sent_emails` замість SMTP. Перемикач "SMTP лежить" зберігається в Redis (`POST /demo/email-provider { failing: true }`), бо API і worker це різні процеси, і змінна в пам'яті API worker-у не видна.
 
 Bull Board на `/queues` показує всі три черги: `events`, `notifications`, `notifications-dlq`, з job-ами у станах waiting, delayed (чекає backoff), failed, completed.
 
 ```
-notifications: email-evt1 [completed]   email-evt2 [delayed, спроба 2 через 2 с]
+notifications: email-evt1 [completed]   email-evt2 [delayed, наступна спроба через 2 с]
 notifications-dlq: dlq-email-evt3 { failedReason: 'SMTP недоступний', attempts: 3 }
 ```
 
@@ -47,7 +47,9 @@ notifications-dlq: dlq-email-evt3 { failedReason: 'SMTP недоступний',
 `test/e2e/notifications.e2e-spec.ts` (relay, consumer і email worker запущені в процесі тесту):
 
 - "успішний checkout": після `POST /checkout` у `sent_emails` з'являється лист на email користувача з номером замовлення в темі; `GET /notifications/emails?to=...` його показує.
-- "провайдер падає": `failing: true`, job проходить 3 спроби (`attemptsMade = 3`), у `notifications-dlq` є job `dlq-<id>` з `attempts: 3` і причиною, у `sent_emails` листа немає, `GET /notifications/dlq` його містить.
+- "провайдер падає": `failing: true`, job проходить 3 спроби (`attemptsMade = 3`), у `notifications-dlq` є job `dlq-<id>` з `attempts: 3` і причиною, у `sent_emails` листа немає, `GET /notifications/dlq` його містить, а адмін іншого tenant не бачить.
+
+Unit-тест `email.worker.spec.ts` перевіряє момент копіювання: на 1-й і 2-й спробі DLQ порожній, на 3-й копія робиться до помилки.
 - "провайдер падає лише раз": перша спроба невдала, перемикач вимкнено, retry з backoff доставляє лист, у DLQ нічого.
 
 ## Спробуй сам

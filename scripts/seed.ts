@@ -1,8 +1,10 @@
 // Seed: 2 tenants, у кожному admin + 2 users, 20 товарів, кілька замовлень, прапорці.
-// Запуск: npm run seed (ідемпотентний: повторний запуск нічого не дублює).
+// Запуск: npm run seed (ідемпотентний: повторний запуск нічого не дублює і не перезаписує вже змінені прапорці).
+// У production (NODE_ENV=production) seed нічого не робить, якщо в базі вже є хоч один tenant: docker compose
+// запускає його при кожному старті api, і демо-дані не повинні втручатися в живу базу.
 import 'reflect-metadata';
 import * as bcrypt from 'bcryptjs';
-import { DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { dataSourceOptions } from '../src/data-source';
 import { Tenant } from '../src/modules/auth/tenant.entity';
 import { User } from '../src/modules/auth/user.entity';
@@ -24,10 +26,27 @@ const PRODUCT_NAMES = [
   'Колонка', 'Рюкзак', 'Підставка для ноутбука', 'Килимок', 'Лампа',
 ];
 
-async function main(): Promise<void> {
+/** true, якщо seed треба пропустити: production і в базі вже є дані. */
+export function shouldSkipSeed(nodeEnv: string | undefined, tenantCount: number): boolean {
+  return nodeEnv === 'production' && tenantCount > 0;
+}
+
+/** Створює прапорець, лише якщо його ще немає: відсоток, який адмін змінив через API, seed не скидає. */
+export async function ensureFlag(flags: Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, data: { key: string; enabled: boolean; percentage: number }): Promise<boolean> {
+  if (await flags.findOne({ where: { key: data.key } })) return false;
+  await flags.save(flags.create({ ...data, allowlist: [] }));
+  return true;
+}
+
+export async function main(): Promise<void> {
   const ds = new DataSource({ ...dataSourceOptions(), logging: false });
   await ds.initialize();
   await ds.runMigrations();
+  if (shouldSkipSeed(process.env.NODE_ENV, await ds.getRepository(Tenant).count())) {
+    console.log('seed: NODE_ENV=production і дані вже є, пропускаю');
+    await ds.destroy();
+    return;
+  }
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 8);
 
   for (const tenantData of TENANTS) {
@@ -68,14 +87,17 @@ async function main(): Promise<void> {
   }
 
   const flags = ds.getRepository(FeatureFlag);
-  await flags.save(flags.create({ key: 'products-v2-default', enabled: true, percentage: 30, allowlist: [] }));
-  await flags.save(flags.create({ key: 'new-checkout-ui', enabled: false, percentage: 0, allowlist: [] }));
-  console.log('flags: products-v2-default (30 %), new-checkout-ui (off)');
+  await ensureFlag(flags, { key: 'products-v2-default', enabled: true, percentage: 30 });
+  await ensureFlag(flags, { key: 'new-checkout-ui', enabled: false, percentage: 0 });
+  console.log('flags: products-v2-default (типово 30 %), new-checkout-ui (типово off); наявні не змінюю');
   console.log(`Логін: tenantSlug=acme, email=admin@acme.test, password=${SEED_PASSWORD}`);
   await ds.destroy();
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Запускаємо лише як скрипт, а не при імпорті з тесту.
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

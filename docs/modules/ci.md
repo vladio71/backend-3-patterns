@@ -1,4 +1,4 @@
-# CI: lint, build, unit, e2e
+# CI: lint, typecheck, deps:check, build, unit, e2e
 
 Код: `.github/workflows/ci.yml`, конфіги `jest.unit.config.js`, `jest.e2e.config.js`, `test/e2e/env.ts`.
 
@@ -12,13 +12,13 @@
 
 ## Правильне рішення
 
-Один workflow на кожен push і PR з чотирма кроками по порядку: `npm run lint`, `npm run build`, `npm test`, `npm run test:e2e`. Postgres 16 і Redis 7 піднімаються як service containers GitHub Actions з healthcheck, тому e2e бачать ту саму версію, що й production у `docker-compose.yml`.
+Один workflow на кожен push і PR з шістьма кроками по порядку: `npm run lint`, `npm run typecheck`, `npm run deps:check`, `npm run build`, `npm test`, `npm run test:e2e`. `typecheck` перевіряє типи і в `test/`, `scripts/` (збірка їх не компілює); `deps:check` ловить циклічні імпорти та імпорт тестів у код застосунку. Postgres 16 і Redis 7 піднімаються як service containers GitHub Actions з healthcheck, тому e2e бачать ту саму версію, що й production у `docker-compose.yml`.
 
 ```
 job checks
   services: postgres:16 (patterns_test), redis:7
   steps: checkout -> setup-node 22 (cache npm) -> npm ci
-         -> lint -> build -> unit -> e2e (TEST_DB_PORT=5432, TEST_REDIS_PORT=6379)
+         -> lint -> typecheck -> deps:check -> build -> unit -> e2e (TEST_DB_PORT=5432, TEST_REDIS_PORT=6379)
 ```
 
 `test/e2e/env.ts` читає `TEST_*` змінні, тому локально ті самі тести можна запустити на будь-якому порту: `TEST_DB_PORT=54333 TEST_REDIS_PORT=6391 npm run test:e2e`. Тести ходять у Redis з `REDIS_DB=1`, щоб не ділити черги з worker-ом, який, можливо, запущений на тій самій машині.
@@ -27,7 +27,7 @@ job checks
 
 ## Тест, який це доводить
 
-Сам workflow: зелений прогін означає, що лінт, збірка, 11 unit і 47 e2e тестів пройшли на чистій машині. Локально те саме дають чотири команди з README.
+Сам workflow: зелений прогін означає, що лінт, перевірка типів і залежностей, збірка, 33 unit і 62 e2e тести пройшли на чистій машині. Локально те саме дають команди з README.
 
 ## Спробуй сам
 

@@ -20,6 +20,7 @@ export type AppConfig = {
     secretAccessKey: string;
     forcePathStyle: boolean;
     maxImageBytes: number;
+    presignExpiresSec: number;
   };
   flags: { cacheTtlSec: number };
   notifications: { attempts: number; backoffMs: number };
@@ -46,6 +47,11 @@ function bool(name: string, fallback: boolean): boolean {
   return value === 'true' || value === '1';
 }
 
+// Значення за замовчуванням публічні (вони лежать у репозиторії), тому в production з ними сервіс стартувати не повинен:
+// будь-хто підпише власний JWT з роллю admin або надішле "підписаний" вебхук про оплату.
+const DEFAULT_JWT_SECRET = 'dev-secret-change-me';
+const DEFAULT_WEBHOOK_SECRET = 'whsec-dev';
+
 export function loadConfig(): AppConfig {
   const breakerImpl = str('BREAKER_IMPL', 'opossum');
   if (breakerImpl !== 'opossum' && breakerImpl !== 'custom') {
@@ -55,10 +61,20 @@ export function loadConfig(): AppConfig {
   if (storageDriver !== 's3' && storageDriver !== 'fake') {
     throw new Error('STORAGE_DRIVER має бути s3 або fake');
   }
+  const jwtSecret = str('JWT_SECRET', DEFAULT_JWT_SECRET);
+  const webhookSecret = str('PAYMENT_WEBHOOK_SECRET', DEFAULT_WEBHOOK_SECRET);
+  if (process.env.NODE_ENV === 'production') {
+    if (jwtSecret === DEFAULT_JWT_SECRET) {
+      throw new Error('У production змінна JWT_SECRET не може мати значення за замовчуванням. Задайте довгий випадковий рядок.');
+    }
+    if (webhookSecret === DEFAULT_WEBHOOK_SECRET) {
+      throw new Error('У production змінна PAYMENT_WEBHOOK_SECRET не може мати значення за замовчуванням. Задайте довгий випадковий рядок.');
+    }
+  }
   return {
     port: num('PORT', 3002),
-    jwtSecret: str('JWT_SECRET', 'dev-secret-change-me'),
-    webhookSecret: str('PAYMENT_WEBHOOK_SECRET', 'whsec-dev'),
+    jwtSecret,
+    webhookSecret,
     db: {
       host: str('DB_HOST', 'localhost'),
       port: num('DB_PORT', 5432),
@@ -84,6 +100,7 @@ export function loadConfig(): AppConfig {
       secretAccessKey: str('S3_SECRET_ACCESS_KEY', 'minioadmin'),
       forcePathStyle: bool('S3_FORCE_PATH_STYLE', true),
       maxImageBytes: num('MAX_IMAGE_BYTES', 2 * 1024 * 1024),
+      presignExpiresSec: num('S3_PRESIGN_EXPIRES_SEC', 300),
     },
     flags: { cacheTtlSec: num('FLAGS_CACHE_TTL_SEC', 10) },
     notifications: { attempts: num('EMAIL_ATTEMPTS', 3), backoffMs: num('EMAIL_BACKOFF_MS', 1000) },

@@ -1,4 +1,9 @@
-import { rolloutBucket } from './feature-flags.service';
+import { Logger } from '@nestjs/common';
+import Redis from 'ioredis';
+import { Repository } from 'typeorm';
+import { AppConfig } from '../../common/config';
+import { FeatureFlag } from './feature-flag.entity';
+import { FeatureFlagsService, rolloutBucket } from './feature-flags.service';
 
 describe('rolloutBucket', () => {
   it('детермінований: той самий userId і key дають те саме число', () => {
@@ -19,5 +24,36 @@ describe('rolloutBucket', () => {
     for (let i = 0; i < total; i++) if (rolloutBucket(`user-${i}`, 'flag') < 30) on++;
     expect(on / total).toBeGreaterThan(0.26);
     expect(on / total).toBeLessThan(0.34);
+  });
+});
+
+describe('FeatureFlagsService.isOn, коли Redis недоступний', () => {
+  const config = { flags: { cacheTtlSec: 10 } } as AppConfig;
+  const rowOn = { key: 'k', enabled: true, percentage: 100, allowlist: [] };
+
+  function make(redis: Partial<Redis>): FeatureFlagsService {
+    const repo = { findOne: jest.fn().mockResolvedValue(rowOn) } as unknown as Repository<FeatureFlag>;
+    return new FeatureFlagsService(repo, redis as Redis, config);
+  }
+
+  it('повертає false і не кидає помилку', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const service = make({ get: jest.fn().mockRejectedValue(new Error('Reached the max retries per request limit (which is 1)')) });
+    await expect(service.isOn('k', 'user-1')).resolves.toBe(false);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('вважаю його вимкненим'));
+    warn.mockRestore();
+  });
+
+  it('з працюючим Redis прапорець на 100 % вмикається', async () => {
+    const service = make({ get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK') });
+    await expect(service.isOn('k', 'user-1')).resolves.toBe(true);
+  });
+
+  it('upsert не падає, якщо не вдалося скинути кеш', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const repo = { create: jest.fn((v) => v), save: jest.fn(async (v) => v) } as unknown as Repository<FeatureFlag>;
+    const service = new FeatureFlagsService(repo, { del: jest.fn().mockRejectedValue(new Error('down')) } as unknown as Redis, config);
+    await expect(service.upsert('k', { enabled: true, percentage: 10, allowlist: [] })).resolves.toMatchObject({ key: 'k', percentage: 10 });
+    warn.mockRestore();
   });
 });

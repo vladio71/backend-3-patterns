@@ -15,6 +15,10 @@ export function conflict(code: string, message: string, extra: Record<string, un
   return new ApiError(HttpStatus.CONFLICT, code, message, extra);
 }
 
+export function unprocessable(code: string, message: string, extra: Record<string, unknown> = {}): ApiError {
+  return new ApiError(HttpStatus.UNPROCESSABLE_ENTITY, code, message, extra);
+}
+
 export function badRequest(code: string, message: string): ApiError {
   return new ApiError(HttpStatus.BAD_REQUEST, code, message);
 }
@@ -22,4 +26,9 @@ export function badRequest(code: string, message: string): ApiError {
 /** Postgres: порушення унікального ключа. */
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
+}
+
+/** Унікальний ключ порушено саме на вказаному обмеженні (pg кладе його ім'я в error.constraint). Інші 23505 це не те, що ми чекаємо. */
+export function isUniqueViolationOn(error: unknown, constraint: string): boolean {
+  return isUniqueViolation(error) && (error as { constraint?: string }).constraint === constraint;
 }

@@ -12,17 +12,11 @@ import { existsSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
 
 const PROJECT = 'backend-3-patterns';
-// health також перевіряється у SMOKE нижче.
-const HEALTH_URL = 'http://localhost:3002/health';
-void HEALTH_URL;
-const SMOKE = [["health", "http://localhost:3002/health", {"status": 200, "includes": "ok"}], ["товари v1 (без токена має бути 401)", "http://localhost:3002/v1/products", {"status": 401}], ["контракт API", "http://localhost:3002/reference", {"status": 200}], ["MinIO консоль", "http://localhost:9001/", {"status": 200}]]; // [назва, url, що очікуємо]
+const SMOKE = [["health", "http://localhost:3002/health", {"status": 200, "includes": "\"ok\":true"}], ["товари v1 (без токена має бути 401)", "http://localhost:3002/v1/products", {"status": 401}], ["контракт API", "http://localhost:3002/reference", {"status": 200}], ["MinIO консоль", "http://localhost:9001/", {"status": 200}]]; // [назва, url, що очікуємо]
 const OPEN = [["схема проєкту", "http://localhost:3002/scheme"], ["контракт API", "http://localhost:3002/reference"], ["Bull Board, черги (email і dead-letter)", "http://localhost:3002/queues"], ["MinIO консоль, minioadmin / minioadmin", "http://localhost:9001"], ["Jaeger, трейси", "http://localhost:16686"]];   // [назва, url]
-const PROFILES = {}; // прапорець -> профіль compose
 
 const args = new Set(process.argv.slice(2));
 const wipe = args.has('--wipe');
-const profiles = Object.entries(PROFILES).filter(([flag]) => args.has(flag)).map(([, p]) => p);
-const profileArgs = profiles.flatMap((p) => ['--profile', p]);
 
 const log = (s) => console.log(s);
 const fail = (s) => { console.error('\n' + s); process.exit(1); };
@@ -40,13 +34,10 @@ function dockerOk() {
 
 // 1. залежності і .env
 function ensureDeps() {
-  const dirs = ['.', ...(existsSync('learn/package.json') ? ['learn'] : [])];
-  for (const dir of dirs) {
-    if (existsSync(`${dir}/node_modules`)) continue;
-    log(`${dir === '.' ? 'Бекенд' : dir + '/'}: ставлю npm-залежності (один раз)`);
-    const r = run('npm', ['install', '--prefix', dir, '--no-audit', '--no-fund'], { inherit: true });
-    if (r.status !== 0) fail('npm install впав. Текст помилки вище.');
-  }
+  if (existsSync('node_modules')) return;
+  log('Ставлю npm-залежності (один раз)');
+  const r = run('npm', ['install', '--no-audit', '--no-fund'], { inherit: true });
+  if (r.status !== 0) fail('npm install впав. Текст помилки вище.');
 }
 
 function ensureEnv() {
@@ -156,9 +147,9 @@ function withPorts(url, ports) {
 function composeUp() {
   if (wipe) {
     log('Видаляю томи (--wipe)');
-    run('docker', ['compose', ...profileArgs, 'down', '-v', '--remove-orphans'], { inherit: true });
+    run('docker', ['compose', 'down', '-v', '--remove-orphans'], { inherit: true });
   }
-  const r = run('docker', ['compose', ...profileArgs, 'up', '--build', '-d', '--remove-orphans'], { inherit: true });
+  const r = run('docker', ['compose', 'up', '--build', '-d', '--remove-orphans'], { inherit: true });
   if (r.status !== 0) fail('docker compose up впав. Текст помилки вище.');
 }
 
@@ -167,14 +158,14 @@ async function waitHealthy(timeoutMs = 240_000) {
   const start = Date.now();
   let last = '';
   while (Date.now() - start < timeoutMs) {
-    const r = run('docker', ['compose', ...profileArgs, 'ps', '--all', '--format', 'json']);
+    const r = run('docker', ['compose', 'ps', '--all', '--format', 'json']);
     const rows = (r.stdout || '').trim().split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     const items = rows.flatMap((x) => (Array.isArray(x) ? x : [x]));
     const bad = items.filter((c) => c.State === 'exited' && c.ExitCode !== 0);
     if (bad.length) {
       for (const c of bad) {
         console.error(`\nСервіс ${c.Service} упав (код ${c.ExitCode}). Останні рядки логів:`);
-        run('docker', ['compose', ...profileArgs, 'logs', '--tail', '40', c.Service], { inherit: true });
+        run('docker', ['compose', 'logs', '--tail', '40', c.Service], { inherit: true });
       }
       fail('Запуск не вдався.');
     }
@@ -185,7 +176,7 @@ async function waitHealthy(timeoutMs = 240_000) {
     if (pending.length === 0) return;
     await new Promise((res) => setTimeout(res, 3000));
   }
-  run('docker', ['compose', ...profileArgs, 'ps'], { inherit: true });
+  run('docker', ['compose', 'ps'], { inherit: true });
   fail('За 4 хвилини не всі сервіси стали healthy. Подивись docker compose logs <сервіс>.');
 }
 

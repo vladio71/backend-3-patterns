@@ -37,7 +37,7 @@ Nest: `app.enableVersioning({ type: VersioningType.URI, defaultVersion: VERSION_
 
 ### Feature flags
 
-Таблиця `feature_flags (key, enabled, percentage, allowlist)`. `FeatureFlagsService.isOn(key, userId)`:
+Таблиця `feature_flags (key, enabled, percentage, allowlist)`. Прапорці зараз глобальні: один ключ на весь сервіс, а `PUT /admin/flags/:key` будь-якого admin змінює його для всіх tenants (прогалину закриває наступна міграція, де ключ стає парою `(tenant_id, key)`). `FeatureFlagsService.isOn(key, userId)`:
 
 ```
 enabled = false            -> false
@@ -48,7 +48,11 @@ hash(userId:key) % 100 < percentage -> true, інакше false
 
 Хеш детермінований (sha256), тому один і той самий користувач завжди в одній групі: сторінка не "стрибає" між формами при кожному оновленні. Різні прапорці дають різні групи, бо key входить у хеш.
 
-Кеш у Redis на 10 секунд (`FLAGS_CACHE_TTL_SEC`): база не отримує запит на кожен виклик `isOn`. `PUT /admin/flags/:key` видаляє ключ з кешу, тому зміна видна одразу, а не через 10 секунд.
+Кеш у Redis на 10 секунд (`FLAGS_CACHE_TTL_SEC`): база не отримує запит на кожен виклик `isOn`. `PUT /admin/flags/:key` видаляє ключ з кешу, тому зміна видна одразу, а не через 10 секунд. Відсутній прапорець теж кешується (значення `null`), інакше запити про неіснуючий ключ щоразу ходили б у базу. Ціна TTL: якщо зміну зробили в обхід API (прямий `UPDATE` у psql), кеш не скинеться, і старе значення живе до 10 секунд. Менший TTL дає свіжіші дані і більше запитів у Postgres, більший навпаки.
+
+### Що буде, коли Redis лежить
+
+Прапорці стоять на гарячому шляху (`GET /products` питає про `products-v2-default` у кожному запиті), тому кеш не має ставати точкою відмови. Для прапорців створено окремий клієнт Redis (`FLAGS_REDIS` у `src/common/redis.provider.ts`) з `maxRetriesPerRequest: 1`. Загальний клієнт ioredis за замовчуванням повторює команду до 20 разів і висить на секунди; цей відхиляє її за долі секунди. `isOn` ловить будь-яку помилку читання, пише попередження в лог і повертає `false`: нова функція не вмикається сама, старий шлях коду працює, запит не падає з 500. Ціна: поки Redis лежить, усі прапорці off, навіть увімкнені на 100 %. Скидання кешу в `PUT`/`DELETE` теж не валить запит (зміна вже в базі, старий кеш згасне за TTL). Список `GET /admin/flags` іде прямо в базу і від Redis не залежить; `GET /admin/flags/:key` читає через кеш і при лежачому Redis поверне помилку (це admin-ендпоїнт, а не гарячий шлях).
 
 ## Тест, який це доводить
 
@@ -59,7 +63,7 @@ hash(userId:key) % 100 < percentage -> true, інакше false
 - "/v1 і /v2": у v1 `price` число і є `currency`; у v2 `price = { amount, currency }`.
 - "/products без версії": без прапорця v1; після `PUT /admin/flags/products-v2-default` з allowlist одного користувача він бачить v2, інший v1.
 
-`src/modules/feature-flags/feature-flags.service.spec.ts` (unit): `rolloutBucket` детермінований, у межах 0..99, при 30 % частка між 26 і 34 %.
+`src/modules/feature-flags/feature-flags.service.spec.ts` (unit): `rolloutBucket` детермінований, у межах 0..99, при 30 % частка між 26 і 34 %; коли Redis кидає помилку, `isOn` повертає `false` і пише в лог; `upsert` не падає, якщо не вдалося скинути кеш.
 
 ## Спробуй сам
 

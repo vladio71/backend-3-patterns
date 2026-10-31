@@ -62,6 +62,8 @@ export class DemoController {
     return { failing: await this.email.isFailing() };
   }
 
+  /** Повільний звіт (для profiling): навмисно важкий запит, тому лише admin. */
+  @Roles('admin')
   @Get('slow-report')
   slowReport(): Promise<Report> {
     return this.reports.slowReport();

@@ -5,9 +5,11 @@ export class FakeObjectStorage implements ObjectStorage {
   readonly objects = new Map<string, HeadResult>();
   readonly presigned: string[] = [];
 
+  constructor(private readonly expiresInSec = 300) {}
+
   async presignPut(key: string, contentType: string, contentLength: number): Promise<PresignedPut> {
     this.presigned.push(key);
-    return { url: `fake://bucket/${key}?sig=put&len=${contentLength}`, method: 'PUT', headers: { 'Content-Type': contentType, 'Content-Length': String(contentLength) }, expiresInSec: 300 };
+    return { url: `fake://bucket/${key}?sig=put&len=${contentLength}`, method: 'PUT', headers: { 'Content-Type': contentType, 'Content-Length': String(contentLength) }, expiresInSec: this.expiresInSec };
   }
 
   async presignGet(key: string): Promise<string> {

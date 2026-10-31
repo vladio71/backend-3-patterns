@@ -1,4 +1,4 @@
-// Worker черги notifications. Після вичерпання спроб (3) копіює job у notifications-dlq, щоб лист не загубився.
+// Worker черги notifications. На останній спробі (3) копіює job у notifications-dlq, щоб лист не загубився.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Job, Worker } from 'bullmq';
 import { AppConfig, CONFIG } from '../../common/config';
@@ -20,7 +20,6 @@ export class EmailWorker {
   start(): void {
     if (this.worker) return;
     this.worker = new Worker<EmailJobData>(NOTIFICATIONS_QUEUE, (job) => this.handle(job), { connection: queueConnection(this.config), concurrency: 4 });
-    this.worker.on('failed', (job, error) => void this.onFailed(job, error));
     this.logger.log('Worker notifications запущено');
   }
 
@@ -29,18 +28,30 @@ export class EmailWorker {
     this.worker = null;
   }
 
+  /**
+   * DLQ-копія робиться тут, в обробнику, ПЕРЕД тим як помилка піде в BullMQ, а не в слухачі події `failed`.
+   * Слухач стріляє вже після того, як job позначено failed, і лише в тому процесі, що його обробляв: якщо процес
+   * помре в цей проміжок, job failed, а в DLQ його немає. Тут порядок інший: спершу копія, потім помилка, тож
+   * "failed без копії" неможливий. Зворотний випадок (копія є, а job усе одно піде на повтор після збою) безпечний,
+   * бо jobId = dlq-<id> робить повторний add порожньою дією.
+   */
   async handle(job: Job<EmailJobData>): Promise<void> {
-    await this.email.send({ to: job.data.to, subject: job.data.subject, body: job.data.body }, job.id ?? null);
-  }
-
-  private async onFailed(job: Job<EmailJobData> | undefined, error: Error): Promise<void> {
-    if (!job) return;
-    const maxAttempts = job.opts.attempts ?? 1;
-    if (job.attemptsMade < maxAttempts) {
-      this.logger.warn(`Лист ${job.id}: спроба ${job.attemptsMade}/${maxAttempts} не вдалася, повтор пізніше`);
-      return;
+    try {
+      await this.email.send({ to: job.data.to, subject: job.data.subject, body: job.data.body }, job.id ?? null);
+    } catch (error) {
+      const maxAttempts = job.opts.attempts ?? 1;
+      const attempt = job.attemptsMade + 1; // attemptsMade збільшується лише після того, як обробник завершився
+      if (attempt >= maxAttempts) {
+        this.logger.error(`Лист ${job.id}: усі ${maxAttempts} спроби вичерпано, переносимо в DLQ`);
+        await this.queues.notificationsDlq.add(
+          'email',
+          { ...job.data, failedReason: (error as Error).message, attempts: attempt },
+          { jobId: `dlq-${job.id}` },
+        );
+      } else {
+        this.logger.warn(`Лист ${job.id}: спроба ${attempt}/${maxAttempts} не вдалася, повтор пізніше`);
+      }
+      throw error;
     }
-    this.logger.error(`Лист ${job.id}: усі ${maxAttempts} спроби вичерпано, переносимо в DLQ`);
-    await this.queues.notificationsDlq.add('email', { ...job.data, failedReason: error.message, attempts: job.attemptsMade }, { jobId: `dlq-${job.id}` });
   }
 }

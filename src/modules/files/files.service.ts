@@ -1,8 +1,8 @@
 // Зображення товарів: presign (браузер вантажить напряму в S3), confirm (HEAD-перевірка і запис у базу), список з presigned GET.
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AppConfig, CONFIG } from '../../common/config';
 import { ApiError, badRequest, isUniqueViolation, notFound } from '../../common/errors';
 import { RequestContext } from '../../common/request-context';
@@ -18,11 +18,13 @@ const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', '
 
 @Injectable()
 export class FilesService {
+  private readonly logger = new Logger(FilesService.name);
   private readonly images: TenantScopedRepository<ProductImage>;
 
   constructor(
     @InjectRepository(ProductImage) repo: Repository<ProductImage>,
     private readonly ctx: RequestContext,
+    private readonly dataSource: DataSource,
     private readonly products: ProductsService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(CONFIG) private readonly config: AppConfig,
@@ -71,8 +73,18 @@ export class FilesService {
   async remove(productId: string, imageId: string): Promise<void> {
     const image = await this.images.findOne({ id: imageId, productId });
     if (!image) throw notFound('Зображення');
-    await this.storage.remove(image.key);
-    await this.images.raw().delete({ id: image.id });
+
+    // Спершу рядок у базі (в транзакції), потім об'єкт у S3. Порядок не випадковий:
+    //   - S3 першим: об'єкт видалено, а DELETE у базі впав -> рядок є, файлу немає, клієнт отримує битий URL.
+    //   - база першою: рядок видалено, а S3 впав -> у сховищі лишився "сирота", якого ніхто не бачить. Це лише зайві байти.
+    // Другий варіант безпечніший, тому S3-помилку не показуємо клієнтові: зображення для нього вже видалене.
+    await this.dataSource.transaction((manager) => manager.delete(ProductImage, { id: image.id, tenantId: image.tenantId }));
+    try {
+      await this.storage.remove(image.key);
+    } catch (error) {
+      // Об'єкт-сирота лишається в бакеті до завдання прибирання (знайти ключі в S3 без рядка в product_images і видалити, див. docs/modules/files.md).
+      this.logger.error(`Рядок зображення ${image.id} видалено, але об'єкт ${image.key} у сховищі лишився: ${(error as Error).message}`);
+    }
   }
 
   private view(image: ProductImage, url: string): ImageView {

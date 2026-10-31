@@ -45,6 +45,21 @@ describe('multi-tenant', () => {
     await t.http().get(`/products/${productB.id}`).set(auth(user)).expect(404);
   });
 
+  it('GET /orders: звичайний користувач бачить лише свої замовлення, admin усі замовлення tenant', async () => {
+    const alice = await registerUser(t, adminA.tenantSlug, 'alice-orders@example.com');
+    const bob = await registerUser(t, adminA.tenantSlug, 'bob-orders@example.com');
+    const body = { items: [{ productId: productA.id, qty: 1 }] };
+    const aliceOrder = (await t.http().post('/orders').set(auth(alice)).send(body).expect(201)).body.id;
+    const bobOrder = (await t.http().post('/orders').set(auth(bob)).send(body).expect(201)).body.id;
+
+    const ids = async (session: Session): Promise<string[]> =>
+      (await t.http().get('/orders').set(auth(session)).expect(200)).body.map((o: { id: string }) => o.id);
+    expect(await ids(alice)).toEqual([aliceOrder]);
+    expect(await ids(bob)).toEqual([bobOrder]);
+    expect(await ids(adminA)).toEqual(expect.arrayContaining([aliceOrder, bobOrder]));
+    expect(await ids(adminB)).toEqual([]); // чужий tenant не бачить нічого
+  });
+
   it('без токена 401', async () => {
     await t.http().get('/v1/products').expect(401);
   });

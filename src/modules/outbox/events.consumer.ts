@@ -1,5 +1,10 @@
-// Споживач черги events. Ідемпотентний: event id вставляється в consumed_events у тій самій транзакції, що й ефект.
-// Повторна доставка тієї самої події падає на первинному ключі і ефект не повторюється.
+// Споживач черги events. Ідемпотентний: event id вставляється в consumed_events, повторна доставка тієї самої події
+// падає на первинному ключі, і ефект не повторюється.
+//
+// Увага: ефект order.paid це queue.add у Redis, а не запис у Postgres, тому в одну транзакцію з consumed_events він
+// НЕ входить. Якщо add пройшов, а COMMIT упав, подію доставлять ще раз і add повториться. Від другого листа рятує
+// jobId = email-<eventId> (BullMQ ігнорує add з id, який уже є). Тобто гарантія "один лист" складається з двох частин:
+// consumed_events відсікає повторну доставку, jobId відсікає повторний add, коли consumed_events відкотився.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Job, Worker } from 'bullmq';
 import { DataSource } from 'typeorm';
@@ -35,13 +40,13 @@ export class EventsConsumer {
 
   /** Повертає true, якщо ефект застосовано, і false, якщо подія вже була оброблена. */
   async handle(job: Job<OutboxJobData>): Promise<boolean> {
-    const { eventId, type, payload } = job.data;
+    const { eventId, type, tenantId, payload } = job.data;
     try {
       await this.dataSource.transaction(async (manager) => {
         await manager.insert(ConsumedEvent, { eventId, type, effect: this.effectName(type) });
-        // Ефект у тій самій транзакції: або запис про споживання і ефект разом, або нічого.
+        // add кидає помилку -> транзакція відкотиться, подію доставлять знову. add пройшов, а COMMIT упав -> jobId (див. вгорі).
         if (type === 'order.paid') {
-          await this.notifications.enqueueOrderPaidEmail(manager, eventId, payload);
+          await this.notifications.enqueueOrderPaidEmail(manager, eventId, tenantId, payload);
         }
       });
       return true;

@@ -14,3 +14,4 @@ process.env.OUTBOX_POLL_MS = '200';
 process.env.EMAIL_BACKOFF_MS = '50';
 process.env.SAGA_RESUME_AFTER_MS = '0';
 process.env.FLAGS_CACHE_TTL_SEC = '10';
+process.env.S3_PRESIGN_EXPIRES_SEC = '120';

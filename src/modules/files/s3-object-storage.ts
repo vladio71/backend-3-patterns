@@ -5,14 +5,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfig } from '../../common/config';
 import { HeadResult, ObjectStorage, PresignedPut } from './object-storage';
 
-const EXPIRES_SEC = 300;
-
 export class S3ObjectStorage implements ObjectStorage {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly expiresSec: number;
 
   constructor(config: AppConfig['storage']) {
     this.bucket = config.bucket;
+    this.expiresSec = config.presignExpiresSec; // S3_PRESIGN_EXPIRES_SEC
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint || undefined,
@@ -24,12 +24,12 @@ export class S3ObjectStorage implements ObjectStorage {
   /** ContentLength і ContentType входять у підпис: браузер мусить надіслати саме такі заголовки, інакше S3 відповість 403. */
   async presignPut(key: string, contentType: string, contentLength: number): Promise<PresignedPut> {
     const command = new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType, ContentLength: contentLength });
-    const url = await getSignedUrl(this.client, command, { expiresIn: EXPIRES_SEC });
-    return { url, method: 'PUT', headers: { 'Content-Type': contentType, 'Content-Length': String(contentLength) }, expiresInSec: EXPIRES_SEC };
+    const url = await getSignedUrl(this.client, command, { expiresIn: this.expiresSec });
+    return { url, method: 'PUT', headers: { 'Content-Type': contentType, 'Content-Length': String(contentLength) }, expiresInSec: this.expiresSec };
   }
 
   presignGet(key: string): Promise<string> {
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: EXPIRES_SEC });
+    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: this.expiresSec });
   }
 
   async head(key: string): Promise<HeadResult | null> {

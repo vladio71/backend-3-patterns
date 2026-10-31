@@ -30,6 +30,11 @@ export class RequestContext {
     store.role = role;
   }
 
+  /** Роль поточного користувача (з JWT). Null у worker-і: там немає користувача. */
+  role(): string | null {
+    return storage.getStore()?.role ?? null;
+  }
+
   requestId(): string | null {
     return storage.getStore()?.requestId ?? null;
   }
