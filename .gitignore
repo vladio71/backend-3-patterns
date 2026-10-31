@@ -4,3 +4,7 @@ dist
 *.cpuprofile
 coverage
 docs/compodoc
+public/scheme.js
+public/scheme.css
+public/scheme.excalidraw
+public/scheme-assets/

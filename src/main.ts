@@ -9,7 +9,7 @@ import { AppModule } from './app.module';
 import { CONFIG, AppConfig } from './common/config';
 import { setupApp } from './setup-app';
 import { join } from 'node:path';
-import type { Request, Response } from 'express';
+import type { Express } from 'express';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
@@ -17,7 +17,8 @@ async function bootstrap(): Promise<void> {
   // GET /scheme: схема проєкту (Excalidraw у режимі перегляду), файли з папки public (dist/src -> ../../public).
   const publicDir = join(__dirname, '..', '..', 'public');
   app.useStaticAssets(publicDir);
-  app.getHttpAdapter().get('/scheme', (_req: Request, res: Response) => {
+  const express = app.getHttpAdapter().getInstance() as Express;
+  express.get('/scheme', (_req, res) => {
     res.sendFile(join(publicDir, 'scheme.html'));
   });
   app.enableShutdownHooks();
