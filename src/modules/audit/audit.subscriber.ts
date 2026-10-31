@@ -51,6 +51,7 @@ export class AuditSubscriber implements EntitySubscriberInterface<Audited> {
     after: Audited,
   ): Promise<void> {
     const row = event.manager.create(AuditLog, {
+      tenantId: after.tenantId,
       entity: event.metadata.tableName.replace(/s$/, ''), // products -> product, orders -> order
       entityId: after.id,
       action,

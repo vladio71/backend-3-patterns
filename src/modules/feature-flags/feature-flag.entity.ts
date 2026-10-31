@@ -1,7 +1,11 @@
 import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
+/** Прапорець належить tenant: ключ це пара (tenant_id, key), admin одного tenant не бачить і не змінює прапорці іншого. */
 @Entity({ name: 'feature_flags' })
 export class FeatureFlag {
+  @PrimaryColumn({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string;
+
   @PrimaryColumn({ type: 'text' })
   key!: string;
 

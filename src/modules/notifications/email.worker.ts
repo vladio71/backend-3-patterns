@@ -37,7 +37,7 @@ export class EmailWorker {
    */
   async handle(job: Job<EmailJobData>): Promise<void> {
     try {
-      await this.email.send({ to: job.data.to, subject: job.data.subject, body: job.data.body }, job.id ?? null);
+      await this.email.send({ to: job.data.to, subject: job.data.subject, body: job.data.body }, job.id ?? null, job.data.tenantId ?? null);
     } catch (error) {
       const maxAttempts = job.opts.attempts ?? 1;
       const attempt = job.attemptsMade + 1; // attemptsMade збільшується лише після того, як обробник завершився

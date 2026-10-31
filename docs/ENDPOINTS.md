@@ -39,7 +39,7 @@
 | --- | --- | --- |
 | GET | `/orders` | admin: усі замовлення tenant, звичайний користувач: лише свої, з позиціями |
 | GET | `/orders/:id` | одне замовлення |
-| POST | `/orders` | `{ items: [{ productId, qty }] }`. Заголовок `Idempotency-Key` необов'язковий: повтор віддає ту саму відповідь з `Idempotent-Replayed: true`; інше тіло з тим самим ключем 409 `IDEMPOTENCY_KEY_REUSED`. Пише `order.created` в outbox |
+| POST | `/orders` | `{ items: [{ productId, qty }] }`. Заголовок `Idempotency-Key` необов'язковий: повтор віддає ту саму відповідь з `Idempotent-Replayed: true`; інше тіло з тим самим ключем 409 `IDEMPOTENCY_KEY_REUSED`. Ключ унікальний для пари (tenant, користувач). Пише `order.created` в outbox |
 
 ## payments (idempotency вебхука)
 
@@ -58,8 +58,8 @@
 
 | Метод | Шлях | Що |
 | --- | --- | --- |
-| GET | `/flags/:key` | `{ key, on }` для поточного користувача |
-| GET | `/admin/flags` | (admin) усі прапорці |
+| GET | `/flags/:key` | `{ key, on }` для поточного користувача; прапорці окремі для кожного tenant |
+| GET | `/admin/flags` | (admin) усі прапорці свого tenant |
 | GET | `/admin/flags/:key` | (admin) один |
 | PUT | `/admin/flags/:key` | (admin) `{ enabled, percentage 0..100, allowlist: userId[] }`, скидає кеш |
 | DELETE | `/admin/flags/:key` | (admin) |
@@ -68,13 +68,13 @@
 
 | Метод | Шлях | Що |
 | --- | --- | --- |
-| GET | `/audit?entity=product\|order&entityId=<uuid>` | (admin) журнал: action, before, after, userId, requestId, at |
+| GET | `/audit?entity=product\|order&entityId=<uuid>` | (admin) журнал свого tenant: action, before, after, userId, requestId, at; чужий entityId дає `[]` |
 
 ## notifications
 
 | Метод | Шлях | Що |
 | --- | --- | --- |
-| GET | `/notifications/emails?to=` | (admin) листи з `sent_emails` |
+| GET | `/notifications/emails?to=` | (admin) листи свого tenant з `sent_emails` |
 | GET | `/notifications/dlq` | (admin) job-и в `notifications-dlq` поточного tenant |
 
 ## demo (circuit-breaker, notifications, profiling)

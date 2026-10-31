@@ -45,6 +45,14 @@ describe('multi-tenant', () => {
     await t.http().get(`/products/${productB.id}`).set(auth(user)).expect(404);
   });
 
+  it('audit: admin tenant A не бачить журнал товару tenant B, admin B бачить', async () => {
+    const own = await t.http().get('/audit').set(auth(adminB)).query({ entity: 'product', entityId: productB.id }).expect(200);
+    expect(own.body.map((row: { action: string }) => row.action)).toEqual(['insert']);
+
+    const foreign = await t.http().get('/audit').set(auth(adminA)).query({ entity: 'product', entityId: productB.id }).expect(200);
+    expect(foreign.body).toEqual([]);
+  });
+
   it('GET /orders: звичайний користувач бачить лише свої замовлення, admin усі замовлення tenant', async () => {
     const alice = await registerUser(t, adminA.tenantSlug, 'alice-orders@example.com');
     const bob = await registerUser(t, adminA.tenantSlug, 'bob-orders@example.com');

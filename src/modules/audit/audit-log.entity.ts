@@ -3,10 +3,14 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
 export type AuditAction = 'insert' | 'update' | 'soft_delete' | 'restore';
 
 @Entity({ name: 'audit_log' })
-@Index('audit_log_entity_idx', ['entity', 'entityId', 'at'])
+// tenant_id першим: кожне читання журналу відбувається в межах tenant
+@Index('audit_log_tenant_entity_idx', ['tenantId', 'entity', 'entityId', 'at'])
 export class AuditLog {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId!: string;
 
   @Column({ type: 'text' })
   entity!: string;

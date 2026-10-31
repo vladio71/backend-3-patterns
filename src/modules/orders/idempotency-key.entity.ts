@@ -1,10 +1,14 @@
-// Збережена відповідь на POST /orders за Idempotency-Key. Ключ унікальний у межах tenant.
+// Збережена відповідь на POST /orders за Idempotency-Key. Ключ унікальний у межах (tenant, користувач).
 import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity({ name: 'idempotency_keys' })
 export class IdempotencyKey {
   @PrimaryColumn({ name: 'tenant_id', type: 'uuid' })
   tenantId!: string;
+
+  /** Власник ключа: два користувачі одного tenant можуть незалежно використати той самий рядок ключа. */
+  @PrimaryColumn({ name: 'user_id', type: 'uuid' })
+  userId!: string;
 
   @PrimaryColumn({ type: 'text' })
   key!: string;

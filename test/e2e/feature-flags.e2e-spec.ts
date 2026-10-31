@@ -47,6 +47,23 @@ describe('feature flags + versioning', () => {
     await t.http().put('/admin/flags/x').set(auth(user)).send({ enabled: true, percentage: 0, allowlist: [] }).expect(403);
   });
 
+  it('прапорці окремі для кожного tenant: однаковий ключ у двох tenants не змішується', async () => {
+    const other = await registerTenant(t, 'flags-other');
+    const key = `per-tenant-${Date.now()}`;
+    await t.http().put(`/admin/flags/${key}`).set(auth(admin)).send({ enabled: true, percentage: 100, allowlist: [] }).expect(200);
+
+    expect((await t.http().get(`/flags/${key}`).set(auth(admin)).expect(200)).body.on).toBe(true);
+    expect((await t.http().get(`/flags/${key}`).set(auth(other)).expect(200)).body.on).toBe(false); // у іншого tenant прапорця немає
+    expect((await t.http().get('/admin/flags').set(auth(other)).expect(200)).body.map((f: { key: string }) => f.key)).not.toContain(key);
+    await t.http().get(`/admin/flags/${key}`).set(auth(other)).expect(404);
+
+    // Свій прапорець з тим самим ключем в іншого tenant не зачіпає перший; видалення теж не перетинається.
+    await t.http().put(`/admin/flags/${key}`).set(auth(other)).send({ enabled: false, percentage: 0, allowlist: [] }).expect(200);
+    expect((await t.http().get(`/flags/${key}`).set(auth(admin)).expect(200)).body.on).toBe(true);
+    await t.http().delete(`/admin/flags/${key}`).set(auth(other)).expect(200);
+    expect((await t.http().get(`/flags/${key}`).set(auth(admin)).expect(200)).body.on).toBe(true);
+  });
+
   it('/v1/products і /v2/products мають різну форму price', async () => {
     const v1 = await t.http().get('/v1/products').set(auth(admin)).expect(200);
     expect(typeof v1.body[0].price).toBe('number');

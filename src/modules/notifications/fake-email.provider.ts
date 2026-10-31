@@ -15,9 +15,9 @@ export type EmailMessage = { to: string; subject: string; body: string };
 export class FakeEmailProvider {
   constructor(@InjectRepository(SentEmail) private readonly sent: Repository<SentEmail>, @Inject(REDIS) private readonly redis: Redis) {}
 
-  async send(message: EmailMessage, jobId: string | null): Promise<SentEmail> {
+  async send(message: EmailMessage, jobId: string | null, tenantId: string | null): Promise<SentEmail> {
     if ((await this.redis.get(EMAIL_FAILING_KEY)) === '1') throw new Error('SMTP недоступний (демо-перемикач)');
-    return this.sent.save(this.sent.create({ ...message, jobId }));
+    return this.sent.save(this.sent.create({ ...message, jobId, tenantId }));
   }
 
   async setFailing(failing: boolean): Promise<void> {

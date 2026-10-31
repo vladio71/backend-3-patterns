@@ -17,11 +17,11 @@ export class NotificationsController {
     private readonly ctx: RequestContext,
   ) {}
 
-  /** Листи, які "надіслав" фейковий провайдер. Фільтр ?to=email. */
+  /** Листи свого tenant, які "надіслав" фейковий провайдер. Фільтр ?to=email. Листи без tenant (tenant_id NULL) не показуємо. */
   @Roles('admin')
   @Get('emails')
   list(@Query('to') to?: string): Promise<SentEmail[]> {
-    return this.sent.find({ where: to ? { to } : {}, order: { sentAt: 'DESC' }, take: 100 });
+    return this.sent.find({ where: { tenantId: this.ctx.tenantIdOrFail(), ...(to ? { to } : {}) }, order: { sentAt: 'DESC' }, take: 100 });
   }
 
   /**

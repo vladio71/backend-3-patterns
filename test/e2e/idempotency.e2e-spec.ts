@@ -5,7 +5,7 @@ import { Payment } from '../../src/modules/payments/payment.entity';
 import { ProcessedWebhookEvent } from '../../src/modules/payments/processed-webhook-event.entity';
 import { signWebhook } from '../../src/modules/payments/webhook-signature';
 import { OutboxEvent } from '../../src/modules/outbox/outbox-event.entity';
-import { auth, createApp, createProduct, registerTenant, Session, TestApp } from './helpers';
+import { auth, createApp, createProduct, registerTenant, registerUser, Session, TestApp } from './helpers';
 
 describe('idempotency', () => {
   let t: TestApp;
@@ -111,6 +111,25 @@ describe('idempotency', () => {
     const key = `key-invalid-${Date.now()}`;
     await t.http().post('/orders').set(auth(admin)).set('Idempotency-Key', key).send({ items: [] }).expect(400);
     await t.http().post('/orders').set(auth(admin)).set('Idempotency-Key', key).send({ items: [{ productId, qty: 1 }] }).expect(201);
+  });
+
+  it('Idempotency-Key належить користувачеві: інший користувач tenant з тим самим ключем отримує власне замовлення, а не чуже', async () => {
+    const alice = await registerUser(t, admin.tenantSlug, `alice-idem-${Date.now()}@example.com`);
+    const bob = await registerUser(t, admin.tenantSlug, `bob-idem-${Date.now()}@example.com`);
+    const key = `shared-key-${Date.now()}`;
+    const body = { items: [{ productId, qty: 1 }] };
+
+    const aliceOrder = await t.http().post('/orders').set(auth(alice)).set('Idempotency-Key', key).send(body).expect(201);
+    const bobOrder = await t.http().post('/orders').set(auth(bob)).set('Idempotency-Key', key).send(body).expect(201);
+    expect(bobOrder.headers['idempotent-replayed']).toBeUndefined(); // не повтор чужого запиту
+    expect(bobOrder.body.id).not.toBe(aliceOrder.body.id);
+    expect(bobOrder.body.userId).toBe(bob.userId);
+
+    // Кожен зі своїм ключем і далі отримує свою збережену відповідь.
+    const aliceAgain = await t.http().post('/orders').set(auth(alice)).set('Idempotency-Key', key).send(body).expect(201);
+    const bobAgain = await t.http().post('/orders').set(auth(bob)).set('Idempotency-Key', key).send(body).expect(201);
+    expect(aliceAgain.body.id).toBe(aliceOrder.body.id);
+    expect(bobAgain.body.id).toBe(bobOrder.body.id);
   });
 
   it('вебхук із сумою, що не збігається із сумою замовлення, це 422: замовлення лишається pending, подію не позначено обробленою', async () => {

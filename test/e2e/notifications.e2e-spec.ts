@@ -50,6 +50,14 @@ describe('notifications', () => {
 
     const viaApi = await t.http().get('/notifications/emails').set(auth(admin)).query({ to: admin.email }).expect(200);
     expect(viaApi.body).toHaveLength(1);
+    expect(emails[0].tenantId).toBe(admin.tenantId);
+
+    // Листи видно лише в своєму tenant: admin іншого tenant отримує порожній список навіть без фільтра ?to.
+    const other = await registerTenant(t, 'notif-emails-other');
+    const otherList = await t.http().get('/notifications/emails').set(auth(other)).expect(200);
+    expect(otherList.body).toEqual([]);
+    const spy = await t.http().get('/notifications/emails').set(auth(other)).query({ to: admin.email }).expect(200);
+    expect(spy.body).toEqual([]);
   });
 
   it('провайдер падає: 3 спроби з backoff, потім job у notifications-dlq, листа немає', async () => {

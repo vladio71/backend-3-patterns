@@ -6,7 +6,7 @@ import { Request, Response } from 'express';
 import { Observable, from, of, throwError } from 'rxjs';
 import { catchError, mergeMap } from 'rxjs/operators';
 import { DataSource } from 'typeorm';
-import { ApiError, conflict, isUniqueViolation } from '../../common/errors';
+import { ApiError, badRequest, conflict, isUniqueViolation } from '../../common/errors';
 import { RequestContext } from '../../common/request-context';
 import { VALIDATION_OPTIONS, canonicalJson } from '../../common/validation';
 import { IdempotencyKey } from './idempotency-key.entity';
@@ -24,7 +24,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!key) return next.handle(); // без ключа працюємо як звичайний POST
     if (key.length > 200) throw new ApiError(HttpStatus.BAD_REQUEST, 'IDEMPOTENCY_KEY_TOO_LONG', 'Idempotency-Key довший за 200 символів');
 
+    // Ключ належить парі (tenant, користувач). Лише tenant було б мало: два користувачі з однаковим Idempotency-Key
+    // (скажімо, "1") отримали б один одного відповідь, тобто чуже замовлення з чужими даними.
     const tenantId = this.ctx.tenantIdOrFail();
+    const userId = this.ctx.userId();
+    if (!userId) throw badRequest('NO_USER', 'Немає користувача в контексті');
     // Інтерцептор працює ДО глобального ValidationPipe, тому req.body тут сире: з зайвими полями і в довільному порядку ключів.
     // Хешувати його не можна: {items} і {items, foo: 1}, а також різний порядок ключів дали б різні хеші для одного й того самого
     // замовлення, і чесний повтор клієнта отримав би 409. Тому проганяємо тіло через той самий ValidationPipe
@@ -34,10 +38,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const repo = this.dataSource.getRepository(IdempotencyKey);
 
     try {
-      await repo.insert({ tenantId, key, requestHash }); // statusCode і responseBody поки NULL: запит у роботі
+      await repo.insert({ tenantId, userId, key, requestHash }); // statusCode і responseBody поки NULL: запит у роботі
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      const existing = await repo.findOneOrFail({ where: { tenantId, key } });
+      const existing = await repo.findOneOrFail({ where: { tenantId, userId, key } });
       if (existing.requestHash !== requestHash) {
         throw conflict('IDEMPOTENCY_KEY_REUSED', 'Цей Idempotency-Key уже використано з іншим тілом запиту');
       }
@@ -50,8 +54,8 @@ export class IdempotencyInterceptor implements NestInterceptor {
     }
 
     return next.handle().pipe(
-      mergeMap((body) => from(repo.update({ tenantId, key }, { statusCode: res.statusCode, responseBody: (body ?? {}) as object })).pipe(mergeMap(() => of(body)))),
-      catchError((error) => from(repo.delete({ tenantId, key })).pipe(mergeMap(() => throwError(() => error)))), // помилка: ключ звільняємо, клієнт може повторити
+      mergeMap((body) => from(repo.update({ tenantId, userId, key }, { statusCode: res.statusCode, responseBody: (body ?? {}) as object })).pipe(mergeMap(() => of(body)))),
+      catchError((error) => from(repo.delete({ tenantId, userId, key })).pipe(mergeMap(() => throwError(() => error)))), // помилка: ключ звільняємо, клієнт може повторити
     );
   }
 }

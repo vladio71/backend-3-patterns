@@ -37,7 +37,7 @@ Nest: `app.enableVersioning({ type: VersioningType.URI, defaultVersion: VERSION_
 
 ### Feature flags
 
-Таблиця `feature_flags (key, enabled, percentage, allowlist)`. Прапорці зараз глобальні: один ключ на весь сервіс, а `PUT /admin/flags/:key` будь-якого admin змінює його для всіх tenants (прогалину закриває наступна міграція, де ключ стає парою `(tenant_id, key)`). `FeatureFlagsService.isOn(key, userId)`:
+Таблиця `feature_flags (tenant_id, key, enabled, percentage, allowlist)`, первинний ключ `(tenant_id, key)`. Прапорці окремі для кожного tenant: admin ACME вмикає `new-checkout-ui` для свого магазину, і Globex цього не бачить; однаковий ключ у двох tenants це два незалежні рядки. Раніше ключ був глобальним, і `PUT /admin/flags/:key` будь-якого admin змінював прапорець для всіх магазинів. Новий tenant починає без прапорців, тобто все вимкнено. `FeatureFlagsService.isOn(key, userId)`:
 
 ```
 enabled = false            -> false
@@ -48,7 +48,7 @@ hash(userId:key) % 100 < percentage -> true, інакше false
 
 Хеш детермінований (sha256), тому один і той самий користувач завжди в одній групі: сторінка не "стрибає" між формами при кожному оновленні. Різні прапорці дають різні групи, бо key входить у хеш.
 
-Кеш у Redis на 10 секунд (`FLAGS_CACHE_TTL_SEC`): база не отримує запит на кожен виклик `isOn`. `PUT /admin/flags/:key` видаляє ключ з кешу, тому зміна видна одразу, а не через 10 секунд. Відсутній прапорець теж кешується (значення `null`), інакше запити про неіснуючий ключ щоразу ходили б у базу. Ціна TTL: якщо зміну зробили в обхід API (прямий `UPDATE` у psql), кеш не скинеться, і старе значення живе до 10 секунд. Менший TTL дає свіжіші дані і більше запитів у Postgres, більший навпаки.
+Кеш у Redis на 10 секунд (`FLAGS_CACHE_TTL_SEC`, ключ `flags:<tenant>:<key>`): база не отримує запит на кожен виклик `isOn`. `PUT /admin/flags/:key` видаляє ключ з кешу, тому зміна видна одразу, а не через 10 секунд. Відсутній прапорець теж кешується (значення `null`), інакше запити про неіснуючий ключ щоразу ходили б у базу. Ціна TTL: якщо зміну зробили в обхід API (прямий `UPDATE` у psql), кеш не скинеться, і старе значення живе до 10 секунд. Менший TTL дає свіжіші дані і більше запитів у Postgres, більший навпаки.
 
 ### Що буде, коли Redis лежить
 
@@ -60,14 +60,15 @@ hash(userId:key) % 100 < percentage -> true, інакше false
 
 - "percentage": для 6 користувачів `GET /flags/:key` дає `on === rolloutBucket(userId, key) < 40`, і повторний виклик дає те саме.
 - "allowlist": при `percentage: 0` користувач з allowlist бачить `on: true`, інші `false`; `enabled: false` вимикає для всіх.
+- "прапорці окремі для кожного tenant": прапорець, створений в одному tenant, в іншого off, не в його списку і дає 404 по ключу; той самий ключ в іншого tenant не зачіпає перший, видалення теж не перетинається.
 - "/v1 і /v2": у v1 `price` число і є `currency`; у v2 `price = { amount, currency }`.
 - "/products без версії": без прапорця v1; після `PUT /admin/flags/products-v2-default` з allowlist одного користувача він бачить v2, інший v1.
 
-`src/modules/feature-flags/feature-flags.service.spec.ts` (unit): `rolloutBucket` детермінований, у межах 0..99, при 30 % частка між 26 і 34 %; коли Redis кидає помилку, `isOn` повертає `false` і пише в лог; `upsert` не падає, якщо не вдалося скинути кеш.
+`src/modules/feature-flags/feature-flags.service.spec.ts` (unit): `rolloutBucket` детермінований, у межах 0..99, при 30 % частка між 26 і 34 %; коли Redis кидає помилку, `isOn` повертає `false` і пише в лог; `upsert` не падає, якщо не вдалося скинути кеш; ключ кешу містить tenant.
 
 ## Спробуй сам
 
 1. Додай заголовок `Deprecation: true` і `Sunset: <дата>` у відповіді `/v1/products` і напиши в README, як фронтенд має на них реагувати.
-2. Зроби прапорець з параметром tenant: `enabled для tenant acme, вимкнено для globex`. Подумай, що має бути в хеші.
+2. Прапорці вже окремі для кожного tenant. Додай глобальні прапорці платформи (вмикає лише суперадмін, діють на всі tenants, per-tenant значення їх перевизначає) і подумай, як `isOn` має вибирати між двома рядками та що має бути в хеші rollout.
 
 Попередня тема: [multi-tenant](multi-tenant.md) | Наступна тема: [files](files.md)

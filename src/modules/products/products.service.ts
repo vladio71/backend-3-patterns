@@ -73,7 +73,7 @@ export class ProductsService {
       }
 
       const after = await manager.findOneOrFail(Product, { where: { id, tenantId: before.tenantId } });
-      await this.audit.record(manager, 'product', id, 'update', { ...before }, { ...after });
+      await this.audit.record(manager, before.tenantId, 'product', id, 'update', { ...before }, { ...after });
       return after;
     });
   }

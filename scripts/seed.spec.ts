@@ -19,7 +19,7 @@ describe('seed', () => {
   it('ensureFlag не перезаписує наявний прапорець', async () => {
     const save = jest.fn();
     const flags = { findOne: jest.fn().mockResolvedValue({ key: 'products-v2-default', percentage: 80 }), save, create: jest.fn((v) => v) };
-    const created = await ensureFlag(flags as unknown as Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, { key: 'products-v2-default', enabled: true, percentage: 30 });
+    const created = await ensureFlag(flags as unknown as Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, 'tenant-1', { key: 'products-v2-default', enabled: true, percentage: 30 });
     expect(created).toBe(false);
     expect(save).not.toHaveBeenCalled();
   });
@@ -27,8 +27,8 @@ describe('seed', () => {
   it('ensureFlag створює відсутній прапорець', async () => {
     const save = jest.fn();
     const flags = { findOne: jest.fn().mockResolvedValue(null), save, create: jest.fn((v) => v) };
-    const created = await ensureFlag(flags as unknown as Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, { key: 'new-checkout-ui', enabled: false, percentage: 0 });
+    const created = await ensureFlag(flags as unknown as Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, 'tenant-1', { key: 'new-checkout-ui', enabled: false, percentage: 0 });
     expect(created).toBe(true);
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ key: 'new-checkout-ui', percentage: 0, allowlist: [] }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'tenant-1', key: 'new-checkout-ui', percentage: 0, allowlist: [] }));
   });
 });

@@ -35,11 +35,11 @@ save(entity)     -> кидає помилку, якщо entity.tenantId інши
 
 `TenantScopedRepository.raw()` повертає звичайний `Repository` без фільтра. Це свідомий вихід за огорожу для випадків, де обгортка не вміє потрібного запиту (QueryBuilder для `listDeleted`). Правило: з `raw()` умову `tenant_id` пишеш сам. Видалення чи оновлення за голим `id` без `tenant_id` під `raw()` це саме той забутий `where`, від якого обгортка захищає, тому в `FilesService.remove` видалення йде з `{ id, tenantId }`.
 
-Індекси: кожен складений індекс починається з `tenant_id` (`products (tenant_id, created_at)`, `orders (tenant_id, status)`), бо кожен запит має цю умову першою. Унікальні ключі теж у межах tenant: `users (tenant_id, email)`, `products (tenant_id, sku) WHERE deleted_at IS NULL`.
+Індекси: кожен складений індекс починається з `tenant_id` (`products (tenant_id, created_at)`, `orders (tenant_id, status)`, `audit_log (tenant_id, entity, entity_id, at)`, `sent_emails (tenant_id, sent_at)`), бо кожен запит має цю умову першою. Унікальні ключі теж у межах tenant: `users (tenant_id, email)`, `products (tenant_id, sku) WHERE deleted_at IS NULL`, `feature_flags (tenant_id, key)`, `idempotency_keys (tenant_id, user_id, key)`.
 
 ### Які таблиці глобальні (без tenant_id) і чому
 
-Не кожна таблиця належить tenant. Нині без `tenant_id` п'ять таблиць:
+Не кожна таблиця належить tenant. Без `tenant_id` лишилися дві, свідомо:
 
 ```
 таблиця                    чому без tenant_id
@@ -47,12 +47,21 @@ processed_webhook_events   вебхук публічний: на вході не
                            event_id це id події провайдера, глобально унікальний; за ним лише відсікаємо дубль
 consumed_events            event_id це uuid з outbox_events, глобально унікальний; ідемпотентність споживача
                            не залежить від tenant
-audit_log, sent_emails,    глобальні поки що: це відома прогалина, а не рішення. Адмін одного tenant
-feature_flags              бачить журнал, листи й прапорці всіх tenant. Виправляє наступна міграція
-                           (tenant_id у цих трьох таблицях)
 ```
 
-Перші дві глобальні назавжди й свідомо: їхній ключ це id події, а не дані магазину. Решта таблиць (`products`, `orders`, `payments`, `shipments`, `checkout_sagas`, `outbox_events`, `idempotency_keys`, `product_images`, `users`) мають `tenant_id`; `order_items` захищена через `order_id`.
+Їхній ключ це id події, а не дані магазину, тому tenant там нічого не додає. Усі решта таблиць мають `tenant_id`; `order_items` захищена через `order_id`.
+
+Три таблиці спершу теж були глобальними, і це була прогалина, а не рішення: адмін одного tenant бачив журнал, листи й прапорці всіх. Міграція `1730000002000-TenantScopeAuditEmailsFlags` зробила їх tenant-ними:
+
+```
+audit_log          tenant_id NOT NULL, береться від сутності (товар або замовлення), читання лише свого tenant
+sent_emails        tenant_id NULLABLE: лист може прийти без tenant (системний або зі старого job до міграції);
+                   такі рядки (і всі, що були до міграції) не показує жоден tenant
+feature_flags      ключ тепер (tenant_id, key); наявні прапорці скопійовано в усі tenants з тими самими значеннями
+idempotency_keys   у ключ додано user_id (див. idempotency.md)
+```
+
+`GET /audit`, `GET /notifications/emails`, `GET /notifications/dlq` і `/admin/flags` фільтрують за tenant з контексту запиту, а `FeatureFlagsService` кладе tenant ще й у ключ кешу Redis (`flags:<tenant>:<key>`).
 
 ### Три способи ізоляції
 
@@ -78,11 +87,13 @@ feature_flags              бачить журнал, листи й прапор
 - "чужий id це 404": GET, PATCH, DELETE і `GET /products/:id/images` з id товару B під токеном A дають 404.
 - "замовлення з чужим товаром не створюється": 404.
 - "GET /orders": звичайний користувач бачить лише свої замовлення, admin усі замовлення tenant, чужий tenant нічого.
+- "audit": admin tenant A не бачить журнал товару tenant B (порожній список), admin B бачить свій `insert`.
 - "без токена 401".
 
 ## Спробуй сам
 
 1. Додай Row Level Security: `ALTER TABLE products ENABLE ROW LEVEL SECURITY` і політику по `current_setting('app.tenant_id')`. Встанови цю змінну на початку кожної транзакції. Перевір, що навіть "сирий" `dataSource.query('SELECT * FROM products')` без фільтра повертає лише свій tenant.
 2. Зроби endpoint `GET /admin/tenants/:id/stats` для суперадміна, який не належить жодному tenant, і подумай, як `TenantScopedRepository` має поводитись у цьому випадку.
+3. `sent_emails.tenant_id` може бути `NULL`. Додай для них окремий admin-endpoint "системні листи" і подумай, хто має право його бачити, якщо такого листа не належить жодному tenant.
 
 Попередня тема: [audit](audit.md) | Наступна тема: [feature-flags-and-versioning](feature-flags-and-versioning.md)

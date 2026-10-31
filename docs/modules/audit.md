@@ -29,10 +29,12 @@ CREATE UNIQUE INDEX products_tenant_sku_live_uq
 Audit на сервері: `AuditSubscriber` це TypeORM `EntitySubscriberInterface` для `Product` і `Order`. Він реагує на `afterInsert`, `afterUpdate`, `afterSoftRemove`, `afterRecover` і пише рядок в `audit_log` через `event.manager`, тобто в тій самій транзакції. Якщо зміна відкотилась, запис у журналі відкотився разом з нею.
 
 ```
-audit_log: entity | entity_id | action      | before        | after         | user_id | request_id | at
+audit_log: tenant_id | entity | entity_id | action      | before        | after         | user_id | request_id | at
            product| 7f3...    | update      | {name:'до'}   | {name:'після'}| 1a2...  | req-1      | ...
            product| 7f3...    | soft_delete | {deletedAt:null}| {deletedAt:...}| ...
 ```
+
+`tenant_id` береться з самої сутності (`after.tenantId`), тому рядок журналу належить тому tenant, що й товар. `GET /audit` фільтрує за tenant із контексту запиту: admin іншого магазину з чужим `entityId` отримує порожній список (не 403, як і скрізь), і журнал ніколи не віддає `before`/`after` чужого tenant. Індекс `audit_log (tenant_id, entity, entity_id, at)` починається з tenant, як усі складені індекси.
 
 `user_id` і `request_id` беруться з `RequestContext` (AsyncLocalStorage), який заповнили middleware і JWT guard. Підписнику не треба нічого передавати.
 
@@ -46,6 +48,7 @@ audit_log: entity | entity_id | action      | before        | after         | us
 
 - "soft delete": після DELETE товар 404 по id і відсутній у `/v1/products`, присутній у `/products/deleted`; після restore знову 200.
 - "частковий унікальний індекс": дубль sku 409; після soft delete той самий sku створюється; restore старого дає 409 `SKU_TAKEN`.
+- "ізоляція": admin tenant A не бачить журнал товару tenant B (`test/e2e/multi-tenant.e2e-spec.ts`).
 - "audit_log": для одного товару дії `['insert', 'update', 'soft_delete', 'restore']`; у `update` `before.name = 'до'`, `after.name = 'після'`, `userId` того, хто змінював, `requestId = 'req-patch-1'` з заголовка `X-Request-Id`.
 
 ## Спробуй сам

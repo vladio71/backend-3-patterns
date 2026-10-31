@@ -1,4 +1,4 @@
-// Seed: 2 tenants, у кожному admin + 2 users, 20 товарів, кілька замовлень, прапорці.
+// Seed: 2 tenants, у кожному admin + 2 users, 20 товарів, кілька замовлень, прапорці (свої в кожного tenant).
 // Запуск: npm run seed (ідемпотентний: повторний запуск нічого не дублює і не перезаписує вже змінені прапорці).
 // У production (NODE_ENV=production) seed нічого не робить, якщо в базі вже є хоч один tenant: docker compose
 // запускає його при кожному старті api, і демо-дані не повинні втручатися в живу базу.
@@ -31,10 +31,14 @@ export function shouldSkipSeed(nodeEnv: string | undefined, tenantCount: number)
   return nodeEnv === 'production' && tenantCount > 0;
 }
 
-/** Створює прапорець, лише якщо його ще немає: відсоток, який адмін змінив через API, seed не скидає. */
-export async function ensureFlag(flags: Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>, data: { key: string; enabled: boolean; percentage: number }): Promise<boolean> {
-  if (await flags.findOne({ where: { key: data.key } })) return false;
-  await flags.save(flags.create({ ...data, allowlist: [] }));
+/** Створює прапорець tenant, лише якщо його ще немає: відсоток, який адмін змінив через API, seed не скидає. */
+export async function ensureFlag(
+  flags: Pick<Repository<FeatureFlag>, 'findOne' | 'save' | 'create'>,
+  tenantId: string,
+  data: { key: string; enabled: boolean; percentage: number },
+): Promise<boolean> {
+  if (await flags.findOne({ where: { tenantId, key: data.key } })) return false;
+  await flags.save(flags.create({ ...data, tenantId, allowlist: [] }));
   return true;
 }
 
@@ -83,13 +87,11 @@ export async function main(): Promise<void> {
         }));
       }
     }
-    console.log(`tenant ${tenant.slug}: ${users.length} users, ${products.length} products`);
+    const flags = ds.getRepository(FeatureFlag);
+    await ensureFlag(flags, tenant.id, { key: 'products-v2-default', enabled: true, percentage: 30 });
+    await ensureFlag(flags, tenant.id, { key: 'new-checkout-ui', enabled: false, percentage: 0 });
+    console.log(`tenant ${tenant.slug}: ${users.length} users, ${products.length} products, flags: products-v2-default (типово 30 %), new-checkout-ui (типово off); наявні не змінюю`);
   }
-
-  const flags = ds.getRepository(FeatureFlag);
-  await ensureFlag(flags, { key: 'products-v2-default', enabled: true, percentage: 30 });
-  await ensureFlag(flags, { key: 'new-checkout-ui', enabled: false, percentage: 0 });
-  console.log('flags: products-v2-default (типово 30 %), new-checkout-ui (типово off); наявні не змінюю');
   console.log(`Логін: tenantSlug=acme, email=admin@acme.test, password=${SEED_PASSWORD}`);
   await ds.destroy();
 }

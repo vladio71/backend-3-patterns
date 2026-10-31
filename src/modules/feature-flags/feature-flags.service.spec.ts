@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { Repository } from 'typeorm';
 import { AppConfig } from '../../common/config';
+import { RequestContext } from '../../common/request-context';
 import { FeatureFlag } from './feature-flag.entity';
 import { FeatureFlagsService, rolloutBucket } from './feature-flags.service';
 
@@ -29,11 +30,12 @@ describe('rolloutBucket', () => {
 
 describe('FeatureFlagsService.isOn, коли Redis недоступний', () => {
   const config = { flags: { cacheTtlSec: 10 } } as AppConfig;
-  const rowOn = { key: 'k', enabled: true, percentage: 100, allowlist: [] };
+  const rowOn = { tenantId: 'tenant-1', key: 'k', enabled: true, percentage: 100, allowlist: [] };
+  const ctx = { tenantIdOrFail: () => 'tenant-1' } as RequestContext;
 
   function make(redis: Partial<Redis>): FeatureFlagsService {
     const repo = { findOne: jest.fn().mockResolvedValue(rowOn) } as unknown as Repository<FeatureFlag>;
-    return new FeatureFlagsService(repo, redis as Redis, config);
+    return new FeatureFlagsService(repo, redis as Redis, config, ctx);
   }
 
   it('повертає false і не кидає помилку', async () => {
@@ -52,8 +54,14 @@ describe('FeatureFlagsService.isOn, коли Redis недоступний', () =
   it('upsert не падає, якщо не вдалося скинути кеш', async () => {
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     const repo = { create: jest.fn((v) => v), save: jest.fn(async (v) => v) } as unknown as Repository<FeatureFlag>;
-    const service = new FeatureFlagsService(repo, { del: jest.fn().mockRejectedValue(new Error('down')) } as unknown as Redis, config);
+    const service = new FeatureFlagsService(repo, { del: jest.fn().mockRejectedValue(new Error('down')) } as unknown as Redis, config, ctx);
     await expect(service.upsert('k', { enabled: true, percentage: 10, allowlist: [] })).resolves.toMatchObject({ key: 'k', percentage: 10 });
     warn.mockRestore();
+  });
+
+  it('ключ кешу містить tenant: однакове ім\'я прапорця в різних tenants не змішується', async () => {
+    const get = jest.fn().mockResolvedValue(null);
+    await make({ get, set: jest.fn().mockResolvedValue('OK') }).isOn('k', 'user-1');
+    expect(get).toHaveBeenCalledWith('flags:tenant-1:k');
   });
 });

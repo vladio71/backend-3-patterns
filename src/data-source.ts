@@ -4,9 +4,10 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { ENTITIES } from './entities';
 import { Init1730000000000 } from './migrations/1730000000000-Init';
 import { AddOrderItemsProductIdx1730000001000 } from './migrations/1730000001000-AddOrderItemsProductIdx';
+import { TenantScopeAuditEmailsFlags1730000002000 } from './migrations/1730000002000-TenantScopeAuditEmailsFlags';
 import { loadConfig } from './common/config';
 
-export const MIGRATIONS = [Init1730000000000, AddOrderItemsProductIdx1730000001000];
+export const MIGRATIONS = [Init1730000000000, AddOrderItemsProductIdx1730000001000, TenantScopeAuditEmailsFlags1730000002000];
 
 export function dataSourceOptions(): DataSourceOptions {
   const config = loadConfig();

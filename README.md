@@ -96,8 +96,8 @@ Auth навмисно мінімальний: `POST /auth/register` (перши�
 npm run lint       # eslint
 npm run typecheck  # tsc --noEmit, разом з test/ і scripts/
 npm run build      # nest build
-npm test           # unit: 33 тести (breaker, rollout і Redis-fallback прапорців, підпис вебхука, config, health, email worker, seed), без бази
-npm run test:e2e   # e2e: 62 тести, 11 suites, потрібні Postgres і Redis
+npm test           # unit: 34 тести (breaker, rollout і Redis-fallback прапорців, підпис вебхука, config, health, email worker, seed), без бази
+npm run test:e2e   # e2e: 65 тестів, 11 suites, потрібні Postgres і Redis
 ```
 
 E2E читають `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_REDIS_HOST`, `TEST_REDIS_PORT` (типово localhost, 5432, 6379), база `patterns_test`, Redis db `1`. Міграції виконуються в `globalSetup`. Кожен suite створює свій tenant, тому базу між прогонами чистити не треба.
